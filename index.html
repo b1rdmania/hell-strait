@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Hell Strait — full strait-ops mission: patrol game, command deck, Ashar briefing, EGA demo. Amiga-era PAL 320×256 in the browser."
+    />
+    <meta name="theme-color" content="#030508" />
+    <title>Hell Strait — Strait Command</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,700;1,700&family=VT323&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --amiga-bg-deep: #030508;
+        --amiga-sky-0: #1a2840;
+        --amiga-sky-1: #0d1520;
+        --amiga-horizon: #c94a2a;
+        --amiga-sea: #050a12;
+        --chrome-gold: #c9a227;
+        --chrome-gold-dim: #8a7018;
+        --chrome-steel: #3d5468;
+        --chrome-panel: #0c1218;
+        --text-paper: #e8dcc4;
+        --text-dim: #8a9ba8;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--amiga-bg-deep);
+        overflow: hidden;
+      }
+
+      #three-canvas {
+        position: fixed;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        z-index: 0;
+      }
+      #game-root {
+        position: fixed;
+        inset: 0;
+        z-index: 12;
+        display: none;
+      }
+      #game-root.is-active {
+        display: block;
+      }
+      #game-root canvas {
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+      body.mode-game #three-canvas {
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      #hint {
+        position: fixed;
+        bottom: 10px;
+        left: 10px;
+        z-index: 30;
+        font: 12px/1.4 "VT323", ui-monospace, monospace;
+        color: var(--text-dim);
+        text-shadow: 0 1px 0 #000;
+        pointer-events: none;
+        max-width: min(560px, 92vw);
+        opacity: 0;
+        transition: opacity 0.35s ease;
+      }
+      #hint.is-visible {
+        opacity: 1;
+      }
+
+      /*
+        Title screen = full-viewport “Cinemaware plate” (HTML/CSS stand-in).
+        For ship: replace .title-screen__art-inner with <canvas> or <img> painted art,
+        or hide #intro and show a Three.js full-screen scene using the same palette.
+      */
+      #intro.title-screen {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        box-sizing: border-box;
+        padding: min(3vw, 20px);
+        display: flex;
+        flex-direction: column;
+        min-height: 100%;
+        min-height: 100dvh;
+        background: radial-gradient(
+            ellipse 100% 70% at 50% -10%,
+            rgba(74, 144, 217, 0.12),
+            transparent 55%
+          ),
+          linear-gradient(
+            180deg,
+            var(--amiga-sky-0) 0%,
+            var(--amiga-sky-1) 38%,
+            #1a1512 52%,
+            var(--amiga-horizon) 54%,
+            #0a0806 56%,
+            var(--amiga-sea) 72%,
+            var(--amiga-bg-deep) 100%
+          );
+        transition: opacity 0.5s ease, visibility 0.5s ease;
+      }
+      #intro.title-screen[hidden] {
+        display: none;
+      }
+      #intro.title-screen.is-leaving {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .title-screen__crt {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        opacity: 0.45;
+        background: repeating-linear-gradient(
+          0deg,
+          rgba(0, 0, 0, 0.09) 0px,
+          rgba(0, 0, 0, 0.09) 1px,
+          transparent 1px,
+          transparent 2px
+        );
+        mix-blend-mode: multiply;
+      }
+      .title-screen__vignette {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1;
+        background: radial-gradient(
+          ellipse 90% 65% at 50% 45%,
+          transparent 30%,
+          rgba(0, 0, 0, 0.55) 100%
+        );
+      }
+
+      .title-screen__frame {
+        position: relative;
+        z-index: 2;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border: 3px solid var(--chrome-gold);
+        box-shadow: inset 0 0 0 1px var(--chrome-steel), 0 0 0 2px #0a0e14,
+          0 16px 48px rgba(0, 0, 0, 0.75);
+        background: linear-gradient(
+          180deg,
+          rgba(8, 12, 18, 0.5) 0%,
+          rgba(5, 8, 12, 0.35) 100%
+        );
+      }
+
+      .title-screen__header {
+        text-align: center;
+        padding: clamp(12px, 3vw, 28px) clamp(16px, 4vw, 40px) 8px;
+      }
+      .title-screen__eyebrow {
+        margin: 0 0 6px;
+        font: 22px/1.2 "VT323", monospace;
+        letter-spacing: 0.28em;
+        text-transform: uppercase;
+        color: var(--text-dim);
+      }
+      .title-screen__logo {
+        margin: 0;
+        font: 700 clamp(2rem, 7.5vw, 3.35rem) / 1.05 "Libre Baskerville", Georgia,
+          serif;
+        color: var(--text-paper);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        text-shadow: 0 2px 0 var(--chrome-gold-dim), 0 -1px 0 rgba(255, 240, 200, 0.35),
+          0 0 40px rgba(201, 162, 39, 0.25);
+      }
+      .title-screen__subtitle {
+        margin: 10px 0 0;
+        font: italic 1rem/1.4 "Libre Baskerville", Georgia, serif;
+        color: rgba(232, 220, 196, 0.85);
+      }
+      .title-screen__strap {
+        margin: 14px auto 0;
+        max-width: 36em;
+        font: 20px/1.35 "VT323", monospace;
+        color: var(--text-dim);
+      }
+
+      /* Middle painting: /public/title-bg.png — swap file or switch to WebGL plate later */
+      .title-screen__art {
+        position: relative;
+        flex: 1;
+        min-height: min(28vh, 220px);
+        margin: 8px 16px 12px;
+        border: 1px solid rgba(61, 84, 104, 0.85);
+        background: url("/title-bg.png") center / cover no-repeat;
+        overflow: hidden;
+      }
+      .title-screen__art-inner {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(
+          180deg,
+          rgba(3, 5, 8, 0.1) 0%,
+          rgba(3, 5, 8, 0.45) 100%
+        );
+      }
+
+      /* Amiga-style horizontal menu strips */
+      .title-screen__menu {
+        padding: 0 16px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .title-screen__menu button {
+        cursor: pointer;
+        display: flex;
+        align-items: stretch;
+        width: 100%;
+        padding: 0;
+        border: none;
+        background: transparent;
+        font: inherit;
+        text-align: left;
+      }
+      .title-screen__menu-key {
+        flex: 0 0 2.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font: 22px "VT323", monospace;
+        color: var(--chrome-gold);
+        background: linear-gradient(180deg, #1e2d3c 0%, #0f1820 100%);
+        border: 2px solid var(--chrome-steel);
+        border-right: none;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      }
+      .title-screen__menu-body {
+        flex: 1;
+        padding: 12px 14px;
+        background: linear-gradient(180deg, #182433 0%, #0c1218 48%, #080c10 100%);
+        border: 2px solid var(--chrome-steel);
+        border-left: 1px solid #1a2838;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
+          inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+      }
+      .title-screen__menu-title {
+        display: block;
+        font: 22px "VT323", monospace;
+        color: var(--text-paper);
+        letter-spacing: 0.04em;
+      }
+      .title-screen__menu-desc {
+        display: block;
+        margin-top: 2px;
+        font: 18px "VT323", monospace;
+        color: var(--text-dim);
+      }
+      .title-screen__menu button:hover .title-screen__menu-body,
+      .title-screen__menu button:focus-visible .title-screen__menu-body {
+        border-color: var(--chrome-gold);
+        background: linear-gradient(180deg, #1c2c3c 0%, #101820 100%);
+      }
+      .title-screen__menu button:hover .title-screen__menu-key,
+      .title-screen__menu button:focus-visible .title-screen__menu-key {
+        border-color: var(--chrome-gold);
+      }
+      .title-screen__menu button:focus-visible {
+        outline: none;
+      }
+      .title-screen__menu button:focus-visible .title-screen__menu-body {
+        box-shadow: inset 0 0 0 2px rgba(201, 162, 39, 0.4);
+      }
+
+      .title-screen__footer {
+        padding: 0 20px 14px;
+        text-align: center;
+        font: 18px "VT323", monospace;
+        color: rgba(92, 107, 120, 0.95);
+      }
+      .title-screen__footer kbd {
+        font: 17px "VT323", monospace;
+        padding: 1px 7px;
+        border: 1px solid var(--chrome-steel);
+        background: rgba(10, 14, 20, 0.9);
+        color: var(--text-dim);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #intro.title-screen,
+        #hint {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Game bootstrap: same ids wired from src/main.ts -->
+    <div id="intro" class="title-screen" aria-label="Title screen">
+      <div class="title-screen__crt" aria-hidden="true"></div>
+      <div class="title-screen__vignette" aria-hidden="true"></div>
+
+      <div class="title-screen__frame">
+        <header class="title-screen__header">
+          <p class="title-screen__eyebrow">Meridian · Ashar</p>
+          <h1 class="title-screen__logo">Hell Strait</h1>
+          <p class="title-screen__subtitle">A complete browser “mission disk”</p>
+          <p class="title-screen__strap">
+            Patrol the convoy · PAL 320×256 · 18-colour dither · procedural Amiga bleeps
+          </p>
+        </header>
+
+        <section
+          class="title-screen__art"
+          aria-label="Strait at sunset — temporary background art"
+        >
+          <div class="title-screen__art-inner" aria-hidden="true"></div>
+        </section>
+
+        <nav class="title-screen__menu" aria-label="Main menu">
+          <button type="button" id="btn-deck" autofocus>
+            <span class="title-screen__menu-key">1</span>
+            <span class="title-screen__menu-body">
+              <span class="title-screen__menu-title">Start patrol</span>
+              <span class="title-screen__menu-desc"
+                >90s survival · score · hi-score · ballistics resupply — full mission</span
+              >
+            </span>
+          </button>
+          <button type="button" id="btn-brief">
+            <span class="title-screen__menu-key">2</span>
+            <span class="title-screen__menu-body">
+              <span class="title-screen__menu-title">Ashar briefing</span>
+              <span class="title-screen__menu-desc"
+                >Cinemaware-style intertitle · second palette</span
+              >
+            </span>
+          </button>
+          <button type="button" id="btn-courtyard">
+            <span class="title-screen__menu-key">3</span>
+            <span class="title-screen__menu-body">
+              <span class="title-screen__menu-title">EGA courtyard (demo)</span>
+              <span class="title-screen__menu-desc"
+                >Three.js flat scene · 16-colour palette · ESC — command deck</span
+              >
+            </span>
+          </button>
+        </nav>
+
+        <footer class="title-screen__footer">
+          <kbd>1</kbd> patrol · <kbd>2</kbd> brief · <kbd>3</kbd> EGA ·
+          <kbd>ESC</kbd> back ·
+          <a href="/gallery/" style="color: #4a90d9">Stability art</a>
+          · sound after first click · dev
+          <kbd>?raw</kbd> <kbd>?skipIntro</kbd> <kbd>?courtyard</kbd>
+        </footer>
+      </div>
+    </div>
+
+    <div id="game-root" aria-label="Patrol game"></div>
+    <div id="hint" role="status"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+.vercel
+.env
+.env.*
+!.env.example
+
+# Stability CLI output (copy winners to public/title-bg.png etc.)
+public/generated/

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hell Strait — Stability art</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@700&family=VT323&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #030508;
+        --paper: #e8dcc4;
+        --dim: #8a9ba8;
+        --gold: #c9a227;
+        --panel: #0c1218;
+        --stroke: #3d5468;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background: var(--bg);
+        color: var(--paper);
+        font: 20px/1.45 "VT323", ui-monospace, monospace;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 24px 18px 48px;
+      }
+      header {
+        border: 2px solid var(--stroke);
+        background: linear-gradient(180deg, #152028, var(--panel));
+        padding: 20px 22px;
+        margin-bottom: 28px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      }
+      h1 {
+        margin: 0 0 6px;
+        font: 700 1.75rem/1.15 "Libre Baskerville", Georgia, serif;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--paper);
+      }
+      .sub {
+        margin: 0;
+        color: var(--dim);
+        font-size: 1.05rem;
+      }
+      .back {
+        display: inline-block;
+        margin-top: 14px;
+        color: var(--gold);
+        text-decoration: none;
+        border-bottom: 1px solid rgba(201, 162, 39, 0.4);
+      }
+      .back:hover {
+        color: #e6c84a;
+      }
+      section {
+        margin-bottom: 36px;
+      }
+      h2 {
+        margin: 0 0 10px;
+        font-size: 1.35rem;
+        font-weight: normal;
+        color: var(--gold);
+        letter-spacing: 0.04em;
+      }
+      p {
+        margin: 0 0 12px;
+        color: var(--dim);
+        font-size: 1rem;
+      }
+      figure {
+        margin: 0;
+        border: 1px solid var(--stroke);
+        background: #050a12;
+        padding: 10px;
+      }
+      figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+        image-rendering: auto;
+      }
+      figcaption {
+        margin-top: 10px;
+        font-size: 0.95rem;
+        color: var(--dim);
+      }
+      .direct a {
+        color: #4a90d9;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <h1>Stability art</h1>
+        <p class="sub">
+          Stable Image Core generations for Hell Strait (prompts in repo:
+          <code>scripts/stability-generate.mjs</code>). Also used as
+          <code>/title-bg.png</code> on the main menu.
+        </p>
+        <a class="back" href="/">← Back to Hell Strait</a>
+      </header>
+
+      <section>
+        <h2>01 — Title strait plate</h2>
+        <p>Cinemaware-style sunset strait, tankers, no UI.</p>
+        <figure>
+          <img
+            src="./01-title-strait.png"
+            alt="Oil tankers in a strait at sunset, painted game title style"
+            width="1344"
+            height="768"
+            loading="lazy"
+          />
+          <figcaption class="direct">
+            Direct link:
+            <a href="./01-title-strait.png">/gallery/01-title-strait.png</a>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section>
+        <h2>02 — Meridian command deck</h2>
+        <p>Bitmap-style chrome panels, meters, cold blue light.</p>
+        <figure>
+          <img
+            src="./02-meridian-deck.png"
+            alt="Fictional military command deck user interface"
+            width="1344"
+            height="768"
+            loading="lazy"
+          />
+          <figcaption class="direct">
+            <a href="./02-meridian-deck.png">/gallery/02-meridian-deck.png</a>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section>
+        <h2>03 — Ashar briefing</h2>
+        <p>Parchment map, torchlight, naval strategy mood.</p>
+        <figure>
+          <img
+            src="./03-ashar-brief.png"
+            alt="Parchment war map with warm lamp light"
+            width="1344"
+            height="768"
+            loading="lazy"
+          />
+          <figcaption class="direct">
+            <a href="./03-ashar-brief.png">/gallery/03-ashar-brief.png</a>
+          </figcaption>
+        </figure>
+      </section>
+
+      <section>
+        <h2>04 — Sprite sheet (1:1)</h2>
+        <p>Top-down drone + boat references for cutout / palette work.</p>
+        <figure>
+          <img
+            src="./04-sprite-sheet.png"
+            alt="Top-down game sprites on blue background"
+            width="1024"
+            height="1024"
+            loading="lazy"
+          />
+          <figcaption class="direct">
+            <a href="./04-sprite-sheet.png">/gallery/04-sprite-sheet.png</a>
+          </figcaption>
+        </figure>
+      </section>
+    </div>
+  </body>
+</html>
