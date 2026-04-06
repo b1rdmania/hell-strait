@@ -1,6 +1,11 @@
 import * as THREE from "three";
 import * as RetroAudio from "../audio/retroAudio";
+import meridianPalette from "../palettes/meridian.json";
 import { buildAircraftCarrier } from "./carrierBase";
+import {
+  makeInboundSpriteTexture,
+  makeInterceptorSpriteTexture,
+} from "./interceptSprites";
 
 const PLANT_HP = 4;
 const MISSILE_SPEED = 10;
@@ -36,9 +41,13 @@ function intBetween(min: number, max: number): number {
 }
 
 export function createInterceptGame(): InterceptAPI {
+  const P = meridianPalette.colors as string[];
+  const c = (hex: string) => new THREE.Color(hex);
+
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1a2840);
-  scene.fog = new THREE.Fog(0x152038, 40, 95);
+  // Match Phaser patrol (`launchGame` backgroundColor) — quantizes cleanly with RetroPipeline.
+  scene.background = new THREE.Color(0x050a12);
+  // No fog: palette pass + Patrol-style flat colours already unify the look; fog was washing detail.
 
   const camera = new THREE.PerspectiveCamera(50, 320 / 256, 0.1, 220);
   camera.position.set(0, 36, 48);
@@ -46,7 +55,7 @@ export function createInterceptGame(): InterceptAPI {
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 80),
-    new THREE.MeshBasicMaterial({ color: 0x3d2e1a }),
+    new THREE.MeshBasicMaterial({ color: c(P[3]!) }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0, 0, -5);
@@ -55,7 +64,7 @@ export function createInterceptGame(): InterceptAPI {
   // Shallow gulf water band
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 22),
-    new THREE.MeshBasicMaterial({ color: 0x0c1a28 }),
+    new THREE.MeshBasicMaterial({ color: c(P[2]!) }),
   );
   water.rotation.x = -Math.PI / 2;
   water.position.set(0, 0.02, 12);
@@ -76,20 +85,20 @@ export function createInterceptGame(): InterceptAPI {
     // Oil cluster (dark tanks)
     const oil = new THREE.Mesh(
       new THREE.BoxGeometry(4, 2.2, 3),
-      new THREE.MeshBasicMaterial({ color: 0x2a1810 }),
+      new THREE.MeshBasicMaterial({ color: c(P[1]!) }),
     );
     oil.position.y = 1.1;
     g.add(oil);
     // Desal / process (lighter block + blue hint)
     const desal = new THREE.Mesh(
       new THREE.BoxGeometry(2.8, 3, 2.2),
-      new THREE.MeshBasicMaterial({ color: 0x4a3d32 }),
+      new THREE.MeshBasicMaterial({ color: c(P[4]!) }),
     );
     desal.position.set(2.2, 1.6, 0.5);
     g.add(desal);
     const blue = new THREE.Mesh(
       new THREE.BoxGeometry(1.2, 0.8, 1),
-      new THREE.MeshBasicMaterial({ color: 0x2d5a8c }),
+      new THREE.MeshBasicMaterial({ color: c(P[12]!) }),
     );
     blue.position.set(2.2, 3.2, 0.5);
     g.add(blue);
@@ -99,6 +108,9 @@ export function createInterceptGame(): InterceptAPI {
 
   const textureLoader = new THREE.TextureLoader();
   const carrier = buildAircraftCarrier(scene, textureLoader);
+
+  const inboundTex = makeInboundSpriteTexture();
+  const interceptorTex = makeInterceptorSpriteTexture();
 
   type Missile = {
     mesh: THREE.Sprite;
@@ -115,44 +127,24 @@ export function createInterceptGame(): InterceptAPI {
   const missiles: Missile[] = [];
   const interceptors: Interceptor[] = [];
 
-  /** Shared materials — textures from /generated/*.png (Stability); tinted until load. */
+  /** Shared materials — canvas pixel art (PatrolScene-style), nearest-filtered. */
   const inboundMat = new THREE.SpriteMaterial({
-    color: 0xff4422,
+    map: inboundTex,
+    color: 0xffffff,
     transparent: true,
     depthTest: true,
+    fog: false,
+    alphaTest: 0.01,
   });
-  textureLoader.load(
-    "/generated/missile-inbound.png",
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      inboundMat.map = tex;
-      inboundMat.color.setHex(0xffffff);
-      inboundMat.needsUpdate = true;
-    },
-    undefined,
-    () => {
-      /* solid colour fallback */
-    },
-  );
 
   const interceptorMat = new THREE.SpriteMaterial({
-    color: 0xe6c84a,
+    map: interceptorTex,
+    color: 0xffffff,
     transparent: true,
     depthTest: true,
+    fog: false,
+    alphaTest: 0.01,
   });
-  textureLoader.load(
-    "/generated/missile-interceptor.png",
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      interceptorMat.map = tex;
-      interceptorMat.color.setHex(0xffffff);
-      interceptorMat.needsUpdate = true;
-    },
-    undefined,
-    () => {
-      /* fallback */
-    },
-  );
 
   let outcome: InterceptOutcome = "playing";
   let lastOutcome: InterceptOutcome = "playing";
@@ -188,7 +180,7 @@ export function createInterceptGame(): InterceptAPI {
 
     const mesh = new THREE.Sprite(inboundMat);
     mesh.position.set(x, y, z);
-    mesh.scale.set(1.8, 6.2, 1);
+    mesh.scale.set(2.4, 8, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 
@@ -221,7 +213,7 @@ export function createInterceptGame(): InterceptAPI {
 
     const mesh = new THREE.Sprite(interceptorMat);
     mesh.position.copy(origin);
-    mesh.scale.set(1.2, 3.8, 1);
+    mesh.scale.set(1.6, 5, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 
