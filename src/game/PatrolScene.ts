@@ -6,14 +6,26 @@ const H = 256;
 const TANKERS_START = 100;
 const BALLISTICS_START = 8;
 const BALLISTICS_MAX = 16;
-const DEFENSE_LINE = 248;
-const FIRE_COOLDOWN_MS = 340;
-const MISSILE_SPEED = 440;
+/** Gold line — enemies crossing this damage the convoy */
+const DEFENSE_LINE = 236;
+const FIRE_COOLDOWN_MS = 320;
+const MISSILE_SPEED = 480;
 const WIN_MS = 90_000;
 const HISCORE_KEY = "hell-strait-hiscore";
 
+const DEPTH_BG = 0;
+const DEPTH_STARS = 5;
+const DEPTH_CONVOY = 8;
+const DEPTH_THREAT = 50;
+const DEPTH_MISSILE = 80;
+const DEPTH_BANNER = 400;
+const DEPTH_HUD = 900;
+const DEPTH_GAMEOVER = 950;
+
+type ThreatKind = "drone" | "boat";
+
 /**
- * Patrol: defend the convoy — Amiga-style vertical slice with score, waves, and resupply.
+ * Patrol — full strait defence: sprite-based threats, reliable Arcade physics, HUD on top.
  */
 export class PatrolScene extends Phaser.Scene {
   private tankers = TANKERS_START;
@@ -32,6 +44,7 @@ export class PatrolScene extends Phaser.Scene {
   private hudTime!: Phaser.GameObjects.Text;
   private hudScore!: Phaser.GameObjects.Text;
   private hudHi!: Phaser.GameObjects.Text;
+  private hudLegend!: Phaser.GameObjects.Text;
   private hudHint!: Phaser.GameObjects.Text;
 
   private enemies!: Phaser.Physics.Arcade.Group;
@@ -51,48 +64,61 @@ export class PatrolScene extends Phaser.Scene {
       this.hi = 0;
     }
 
+    this.ensureTextures();
     this.drawWorld();
 
-    this.enemies = this.physics.add.group();
-    this.shots = this.physics.add.group();
+    this.enemies = this.physics.add.group({ runChildUpdate: false });
+    this.shots = this.physics.add.group({ runChildUpdate: false });
 
     const textStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: "VT323, monospace",
-      fontSize: "18px",
+      fontSize: "17px",
       color: "#e8eef2",
     };
 
-    this.hudTankers = this.add.text(10, 6, "", textStyle);
-    this.hudMissiles = this.add.text(10, 26, "", textStyle);
-    this.hudWave = this.add.text(W - 10, 6, "", textStyle).setOrigin(1, 0);
-    this.hudTime = this.add.text(W / 2, 6, "", textStyle).setOrigin(0.5, 0);
-    this.hudScore = this.add.text(10, 46, "", { ...textStyle, fontSize: "16px", color: "#c9a227" });
-    this.hudHi = this.add.text(W - 10, 46, "", {
-      ...textStyle,
-      fontSize: "16px",
-      color: "#8a9ba8",
-    }).setOrigin(1, 0);
+    const z = DEPTH_HUD;
+    this.hudTankers = this.add.text(8, 4, "", textStyle).setDepth(z);
+    this.hudMissiles = this.add.text(8, 22, "", textStyle).setDepth(z);
+    this.hudWave = this.add.text(W - 8, 4, "", textStyle).setOrigin(1, 0).setDepth(z);
+    this.hudTime = this.add.text(W / 2, 4, "", textStyle).setOrigin(0.5, 0).setDepth(z);
+    this.hudScore = this.add
+      .text(8, 40, "", { ...textStyle, fontSize: "16px", color: "#c9a227" })
+      .setDepth(z);
+    this.hudHi = this.add
+      .text(W - 8, 40, "", { ...textStyle, fontSize: "16px", color: "#8a9ba8" })
+      .setOrigin(1, 0)
+      .setDepth(z);
 
-    this.hudHint = this.add
-      .text(W / 2, H - 12, "", {
-        ...textStyle,
-        fontSize: "15px",
+    this.hudLegend = this.add
+      .text(W / 2, 62, "", {
+        fontFamily: "VT323, monospace",
+        fontSize: "14px",
         color: "#8a9ba8",
       })
-      .setOrigin(0.5, 1);
+      .setOrigin(0.5, 0)
+      .setDepth(z);
+
+    this.hudHint = this.add
+      .text(W / 2, H - 10, "", {
+        fontFamily: "VT323, monospace",
+        fontSize: "14px",
+        color: "#6a7a88",
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(z);
 
     this.physics.add.overlap(
       this.shots,
       this.enemies,
-      (shot, enemy) => {
-        const e = enemy as Phaser.GameObjects.Rectangle;
-        const w = e.width;
-        const isBoat = w > 14;
-        (shot as Phaser.GameObjects.GameObject).destroy();
-        e.destroy();
-        this.score += isBoat ? 35 : 12;
+      (shotObj, enemyObj) => {
+        const shot = shotObj as Phaser.Physics.Arcade.Sprite;
+        const enemy = enemyObj as Phaser.Physics.Arcade.Sprite;
+        const kind = enemy.getData("kind") as ThreatKind | undefined;
+        shot.destroy();
+        enemy.destroy();
+        this.score += kind === "boat" ? 40 : 15;
         RetroAudio.playHit();
-        this.cameras.main.flash(70, 20, 40, 55, false);
+        this.cameras.main.flash(65, 18, 38, 52, false);
         this.updateHud();
       },
       undefined,
@@ -103,76 +129,152 @@ export class PatrolScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-ESC", () => this.quitToTitle());
 
     const banner = this.add
-      .text(W / 2, H / 2 - 40, "HELL STRAIT", {
+      .text(W / 2, H / 2 - 36, "HELL STRAIT", {
         fontFamily: "Libre Baskerville, Georgia, serif",
-        fontSize: "28px",
+        fontSize: "26px",
         color: "#e8dcc4",
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(DEPTH_BANNER);
     const sub = this.add
-      .text(W / 2, H / 2 - 8, "PATROL — HOLD THE LINE 90s", {
+      .text(W / 2, H / 2 - 4, "AIR & SURFACE THREATS — INTERCEPT", {
         fontFamily: "VT323, monospace",
-        fontSize: "20px",
+        fontSize: "18px",
         color: "#c9a227",
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(DEPTH_BANNER);
 
     this.tweens.add({
       targets: [banner, sub],
       alpha: 0,
-      delay: 2200,
-      duration: 900,
+      delay: 1600,
+      duration: 700,
       onComplete: () => {
         banner.destroy();
         sub.destroy();
       },
     });
 
-    this.time.delayedCall(1900, () => {
+    // Early spawns so threats are visible immediately
+    this.time.delayedCall(400, () => {
+      this.spawnPairDemo();
+    });
+
+    this.time.delayedCall(1200, () => {
       RetroAudio.playAlert();
       this.spawnWaveTick();
       this.time.addEvent({
-        delay: 2800,
+        delay: 2600,
         callback: () => this.spawnWaveTick(),
         callbackScope: this,
         loop: true,
       });
     });
 
-    this.hudHint.setText("FIRE — click / tap    ·    ESC — debrief");
+    this.hudLegend.setText("▲ ORANGE = air drone   ■ BROWN = boat drone   (cross gold line = −1 tanker)");
+    this.hudHint.setText("CLICK / TAP to fire ballistics   ·   ESC — debrief");
     this.updateHud();
   }
 
+  /** Pixel-art style textures — one atlas for predictable physics bounds */
+  private ensureTextures(): void {
+    const t = this.textures;
+    if (t.exists("hs_drone")) return;
+
+    const off = () => {
+      const g = this.add.graphics();
+      g.setPosition(-2000, -2000);
+      return g;
+    };
+
+    let g = off();
+    g.fillStyle(0xff3d1f, 1);
+    g.fillTriangle(9, 2, 16, 16, 2, 16);
+    g.lineStyle(2, 0xffffff, 1);
+    g.strokeTriangle(9, 2, 16, 16, 2, 16);
+    g.fillStyle(0xffaa66, 1);
+    g.fillCircle(9, 12, 2);
+    g.generateTexture("hs_drone", 18, 18);
+    g.destroy();
+
+    g = off();
+    g.fillStyle(0x1a1510, 1);
+    g.fillRoundedRect(0, 6, 36, 14, 3);
+    g.fillStyle(0x8b5a2b, 1);
+    g.fillRoundedRect(2, 8, 32, 10, 2);
+    g.lineStyle(2, 0xffcc88, 1);
+    g.strokeRoundedRect(2, 8, 32, 10, 2);
+    g.fillStyle(0x4a90d9, 0.75);
+    g.fillEllipse(18, 20, 14, 5);
+    g.fillStyle(0x2a2018, 1);
+    g.fillRect(14, 4, 8, 6);
+    g.generateTexture("hs_boat", 38, 26);
+    g.destroy();
+
+    g = off();
+    g.fillStyle(0xffe066, 1);
+    g.fillRect(0, 0, 4, 14);
+    g.fillStyle(0xfff5cc, 1);
+    g.fillRect(0, 0, 4, 4);
+    g.generateTexture("hs_missile", 4, 14);
+    g.destroy();
+  }
+
   private drawWorld(): void {
-    const g = this.add.graphics();
+    const g = this.add.graphics().setDepth(DEPTH_BG);
     g.fillGradientStyle(0x1a2840, 0x1a2840, 0x0a1520, 0x0a1520, 1);
-    g.fillRect(0, 0, W, 120);
+    g.fillRect(0, 0, W, 118);
     g.fillGradientStyle(0x0d1520, 0x0d1520, 0x050a12, 0x050a12, 1);
-    g.fillRect(0, 120, W, 90);
+    g.fillRect(0, 118, W, 92);
     g.fillStyle(0x050a12, 1);
     g.fillRect(0, 200, W, 56);
 
     this.add
-      .line(0, 200, 0, 0, W, 0, 0xc9a227, 0.55)
+      .line(0, DEFENSE_LINE, 0, 0, W, 0, 0xffd040, 1)
       .setOrigin(0, 0.5)
-      .setLineWidth(2);
+      .setLineWidth(3)
+      .setDepth(DEPTH_BG + 1);
 
-    this.add.rectangle(W / 2, 222, W, 36, 0x0c1520).setAlpha(0.88);
+    this.add
+      .text(W / 2, DEFENSE_LINE - 10, "— CONVOY —", {
+        fontFamily: "VT323, monospace",
+        fontSize: "12px",
+        color: "#c9a227",
+      })
+      .setOrigin(0.5, 1)
+      .setAlpha(0.85)
+      .setDepth(DEPTH_BG + 1);
 
-    for (let i = 0; i < 48; i++) {
+    this.add.rectangle(W / 2, 222, W, 38, 0x0c1520).setAlpha(0.92).setDepth(DEPTH_BG + 1);
+
+    for (let i = 0; i < 40; i++) {
       const x = Phaser.Math.Between(4, W - 4);
-      const y = Phaser.Math.Between(4, 112);
+      const y = Phaser.Math.Between(4, 108);
       const s = Phaser.Math.Between(1, 2);
-      this.add.rectangle(x, y, s, s, 0xffffff).setAlpha(Phaser.Math.FloatBetween(0.15, 0.55));
+      this.add
+        .rectangle(x, y, s, s, 0xffffff)
+        .setAlpha(Phaser.Math.FloatBetween(0.12, 0.5))
+        .setDepth(DEPTH_STARS);
     }
 
     const convoyY = 232;
-    const slots = [-110, -78, -46, -14, 18, 50, 82, 108];
+    const slots = [-108, -76, -44, -12, 20, 52, 84, 106];
     for (const ox of slots) {
-      const hull = this.add.rectangle(W / 2 + ox, convoyY, 26, 8, 0x2a3f54);
-      hull.setStrokeStyle(1, 0xc9a227, 0.4);
-      this.add.rectangle(W / 2 + ox, convoyY - 5, 8, 5, 0x8a9ba8).setAlpha(0.9);
+      const hull = this.add.rectangle(W / 2 + ox, convoyY, 24, 7, 0x2a3f54).setDepth(DEPTH_CONVOY);
+      hull.setStrokeStyle(1, 0xc9a227, 0.45);
+      this.add
+        .rectangle(W / 2 + ox, convoyY - 4, 7, 4, 0x8a9ba8)
+        .setAlpha(0.92)
+        .setDepth(DEPTH_CONVOY);
     }
+  }
+
+  /** Guaranteed one of each type so the player always sees both silhouettes */
+  private spawnPairDemo(): void {
+    if (this.gameOver) return;
+    this.spawnThreat("drone", Phaser.Math.Between(40, 120));
+    this.spawnThreat("boat", Phaser.Math.Between(200, 280));
   }
 
   update(_time: number, delta: number): void {
@@ -181,23 +283,23 @@ export class PatrolScene extends Phaser.Scene {
     this.survivedMs += delta;
 
     this.enemies.getChildren().forEach((obj) => {
-      const e = obj as Phaser.GameObjects.Rectangle;
+      const e = obj as Phaser.Physics.Arcade.Sprite;
       if (!e.active) return;
       if (e.y > DEFENSE_LINE) {
         this.tankers = Math.max(0, this.tankers - 1);
         e.destroy();
         RetroAudio.playDamage();
-        this.cameras.main.shake(140, 0.005);
+        this.cameras.main.shake(130, 0.006);
         this.updateHud();
         if (this.tankers <= 0) this.endGame(false);
         return;
       }
-      if (e.y < -30 || e.x < -20 || e.x > W + 20) e.destroy();
+      if (e.y < -40 || e.x < -40 || e.x > W + 40) e.destroy();
     });
 
     this.shots.getChildren().forEach((obj) => {
-      const s = obj as Phaser.GameObjects.Rectangle;
-      if (s.y < -10 || s.y > H + 10 || s.x < -10 || s.x > W + 10) s.destroy();
+      const s = obj as Phaser.Physics.Arcade.Sprite;
+      if (s.y < -16 || s.y > H + 16 || s.x < -16 || s.x > W + 16) s.destroy();
     });
 
     if (!this.gameOver && this.tankers > 0 && this.survivedMs >= WIN_MS) {
@@ -210,9 +312,9 @@ export class PatrolScene extends Phaser.Scene {
   private spawnWaveTick(): void {
     if (this.gameOver) return;
     this.wave += 1;
-    const count = 2 + Math.min(6, Math.floor(this.wave / 2));
+    const count = 2 + Math.min(7, Math.floor(this.wave / 2));
     for (let i = 0; i < count; i++) {
-      this.time.delayedCall(i * 160, () => this.spawnOneEnemy());
+      this.time.delayedCall(i * 140, () => this.spawnRandomThreat());
     }
 
     if (this.wave > 1 && this.wave % 4 === 0) {
@@ -224,27 +326,31 @@ export class PatrolScene extends Phaser.Scene {
     this.updateHud();
   }
 
-  private spawnOneEnemy(): void {
+  private spawnRandomThreat(): void {
     if (this.gameOver) return;
-    const boat = Phaser.Math.Between(0, 100) < 24;
-    const x = Phaser.Math.Between(24, W - 24);
-    const y = -12;
+    const boat = Phaser.Math.Between(0, 100) < 30;
+    this.spawnThreat(boat ? "boat" : "drone", Phaser.Math.Between(24, W - 24));
+  }
 
-    let body: Phaser.GameObjects.Rectangle;
-    if (boat) {
-      body = this.add.rectangle(x, y, 22, 12, 0x8b4513);
-      body.setStrokeStyle(1, 0x4a3020, 0.9);
-      this.physics.add.existing(body);
-      const b = body.body as Phaser.Physics.Arcade.Body;
-      b.setVelocity(Phaser.Math.Between(-28, 28), Phaser.Math.Between(30, 52));
-      b.setAngularVelocity(Phaser.Math.Between(-24, 24));
+  private spawnThreat(kind: ThreatKind, x: number): void {
+    if (this.gameOver) return;
+    const y = kind === "boat" ? -28 : -22;
+    const key = kind === "boat" ? "hs_boat" : "hs_drone";
+    const sprite = this.physics.add.sprite(x, y, key);
+    sprite.setData("kind", kind);
+    sprite.setDepth(DEPTH_THREAT);
+
+    const body = sprite.body as Phaser.Physics.Arcade.Body;
+    body.setCollideWorldBounds(false);
+
+    if (kind === "boat") {
+      body.setVelocity(Phaser.Math.Between(-32, 32), Phaser.Math.Between(36, 58));
+      body.setAngularVelocity(Phaser.Math.Between(-35, 35));
     } else {
-      body = this.add.rectangle(x, y, 8, 8, 0xd94a2a);
-      this.physics.add.existing(body);
-      const b = body.body as Phaser.Physics.Arcade.Body;
-      b.setVelocity(Phaser.Math.Between(-42, 42), Phaser.Math.Between(58, 98));
+      body.setVelocity(Phaser.Math.Between(-50, 50), Phaser.Math.Between(68, 108));
     }
-    this.enemies.add(body);
+
+    this.enemies.add(sprite);
   }
 
   private tryFire(pointer: Phaser.Input.Pointer): void {
@@ -258,15 +364,16 @@ export class PatrolScene extends Phaser.Scene {
     RetroAudio.playFire();
 
     const ox = W / 2;
-    const oy = H - 20;
-    const ang = Phaser.Math.Angle.Between(ox, oy, pointer.x, pointer.y);
+    const oy = H - 22;
+    const px = pointer.worldX ?? pointer.x;
+    const py = pointer.worldY ?? pointer.y;
+    const ang = Phaser.Math.Angle.Between(ox, oy, px, py);
 
-    const shot = this.add.rectangle(ox, oy, 3, 11, 0xe6c84a);
-    shot.setStrokeStyle(1, 0xfff5cc, 0.8);
-    this.physics.add.existing(shot);
+    const shot = this.physics.add.sprite(ox, oy, "hs_missile");
+    shot.setDepth(DEPTH_MISSILE);
+    shot.setRotation(ang + Math.PI / 2);
     const body = shot.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(Math.cos(ang) * MISSILE_SPEED, Math.sin(ang) * MISSILE_SPEED);
-    shot.setRotation(ang + Math.PI / 2);
     this.shots.add(shot);
   }
 
@@ -291,35 +398,38 @@ export class PatrolScene extends Phaser.Scene {
 
     const head = won ? "VICTORY" : "CONVOY LOST";
     const sub = won
-      ? `Strait held — ${this.tankers} tankers remain · wave ${this.wave}\nSCORE ${this.score}`
-      : `The strait ran red — ${Math.floor(this.survivedMs / 1000)}s · wave ${this.wave}\nSCORE ${this.score}`;
+      ? `Strait held — ${this.tankers} tankers · wave ${this.wave}\nSCORE ${this.score}`
+      : `${Math.floor(this.survivedMs / 1000)}s · wave ${this.wave}\nSCORE ${this.score}`;
 
     this.add
-      .text(W / 2, H / 2 - 36, head, {
+      .text(W / 2, H / 2 - 38, head, {
         fontFamily: "Libre Baskerville, Georgia, serif",
         fontSize: "26px",
-        color: won ? "#7cfcb4" : "#d94a4a",
+        color: won ? "#7cfcb4" : "#ff6655",
         align: "center",
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(DEPTH_GAMEOVER);
 
     this.add
-      .text(W / 2, H / 2 + 8, sub, {
+      .text(W / 2, H / 2 + 6, sub, {
         fontFamily: "VT323, monospace",
         fontSize: "20px",
         color: "#e8eef2",
         align: "center",
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(DEPTH_GAMEOVER);
 
     this.add
-      .text(W / 2, H / 2 + 72, "ENTER / ESC — command deck   ·   R — patrol again", {
+      .text(W / 2, H / 2 + 70, "ENTER / ESC — command deck   ·   R — patrol again", {
         fontFamily: "VT323, monospace",
-        fontSize: "17px",
+        fontSize: "16px",
         color: "#8a9ba8",
         align: "center",
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(DEPTH_GAMEOVER);
 
     const kb = this.input.keyboard;
     kb?.once("keydown-ENTER", () => this.quitToTitle());

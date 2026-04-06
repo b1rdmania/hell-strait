@@ -111,7 +111,7 @@ function setHintBrief(): void {
 function setHintPatrol(): void {
   if (!hint) return;
   hint.textContent =
-    "Patrol — FIRE at drones & boats · 90s to win · resupply every 4 waves · ESC — deck";
+    "Patrol — orange triangle drones & brown boat drones · stop them before the gold line · ESC";
 }
 
 function showHudHint(): void {
