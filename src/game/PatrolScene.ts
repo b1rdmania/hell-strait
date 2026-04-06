@@ -17,14 +17,13 @@ const SCALE_BOAT   = 30  / SPRITE_SRC;
 const SCALE_EXPL   = 48  / SPRITE_SRC;
 
 // ---------------------------------------------------------------------------
-// Background — 3 zone images, 30 s each
+// Background — single continuous strait image, tiled vertically
 // ---------------------------------------------------------------------------
 const BG_SRC_W  = 1152;
 const BG_SRC_H  = 2016;
 const BG_SCALE  = W / BG_SRC_W;
 const BG_DISP_H = Math.round(BG_SRC_H * BG_SCALE);
-const ZONE_KEYS = ["bg-zone1", "bg-zone2", "bg-zone3"] as const;
-const ZONE_MS   = 30_000;
+const BG_KEY    = "bg-strait";
 
 // ---------------------------------------------------------------------------
 // Game rules
@@ -101,13 +100,8 @@ export class PatrolScene extends Phaser.Scene {
   private tankerTier = 3;
 
   // ── Background ────────────────────────────────────────────────────────────
-  private bgImg1!:     Phaser.GameObjects.Image;
-  private bgImg2!:     Phaser.GameObjects.Image;
-  private bgFade1!:    Phaser.GameObjects.Image;
-  private bgFade2!:    Phaser.GameObjects.Image;
-  private bgZone       = 0;
-  private bgFading     = false;
-  private bgFadeAlpha  = 0;
+  private bgA!: Phaser.GameObjects.Image;
+  private bgB!: Phaser.GameObjects.Image;
 
   // ── Game objects ──────────────────────────────────────────────────────────
   private player!:       Phaser.GameObjects.Image;
@@ -148,9 +142,7 @@ export class PatrolScene extends Phaser.Scene {
   // ==========================================================================
 
   preload(): void {
-    this.load.image("bg-zone1",     "/generated/bg-zone1.png");
-    this.load.image("bg-zone2",     "/generated/bg-zone2.png");
-    this.load.image("bg-zone3",     "/generated/bg-zone3.png");
+    this.load.image("bg-strait",    "/generated/bg-strait.png");
     this.load.image("player-craft", "/generated/player-craft.png");
     this.load.image("enemy-drone",  "/generated/enemy-drone.png");
     this.load.image("enemy-boat",   "/generated/enemy-boat.png");
@@ -241,11 +233,9 @@ export class PatrolScene extends Phaser.Scene {
   }
 
   private buildBackground(): void {
-    const key = ZONE_KEYS[0];
-    this.bgImg1  = this.add.image(W / 2, BG_DISP_H / 2, key).setScale(BG_SCALE).setDepth(DEPTH_BG);
-    this.bgImg2  = this.add.image(W / 2, BG_DISP_H / 2 - BG_DISP_H, key).setScale(BG_SCALE).setDepth(DEPTH_BG);
-    this.bgFade1 = this.add.image(W / 2, BG_DISP_H / 2, key).setScale(BG_SCALE).setDepth(DEPTH_BG + 1).setAlpha(0);
-    this.bgFade2 = this.add.image(W / 2, BG_DISP_H / 2 - BG_DISP_H, key).setScale(BG_SCALE).setDepth(DEPTH_BG + 1).setAlpha(0);
+    // Two tiles of the same image fill the screen; they alternate as they scroll
+    this.bgA = this.add.image(W / 2,  BG_DISP_H / 2,             BG_KEY).setScale(BG_SCALE).setDepth(DEPTH_BG);
+    this.bgB = this.add.image(W / 2,  BG_DISP_H / 2 - BG_DISP_H, BG_KEY).setScale(BG_SCALE).setDepth(DEPTH_BG);
   }
 
   private buildWorld(): void {
@@ -383,35 +373,13 @@ export class PatrolScene extends Phaser.Scene {
   // ==========================================================================
 
   private scrollBackground(delta: number): void {
-    const dy = BG_SCROLL_SPEED * (delta / 1000);
+    const dy   = BG_SCROLL_SPEED * (delta / 1000);
     const half = BG_DISP_H / 2;
-    for (const img of [this.bgImg1, this.bgImg2, this.bgFade1, this.bgFade2]) img.y += dy;
-    if (this.bgImg1.y - half > H) {
-      this.bgImg1.y  = this.bgImg2.y  - BG_DISP_H;
-      this.bgFade1.y = this.bgFade2.y - BG_DISP_H;
-    }
-    if (this.bgImg2.y - half > H) {
-      this.bgImg2.y  = this.bgImg1.y  - BG_DISP_H;
-      this.bgFade2.y = this.bgImg1.y  - BG_DISP_H;
-    }
-    const targetZone = Math.min(ZONE_KEYS.length - 1, Math.floor(this.survivedMs / ZONE_MS));
-    if (targetZone > this.bgZone && !this.bgFading) {
-      this.bgFading = true; this.bgFadeAlpha = 0;
-      const nk = ZONE_KEYS[targetZone];
-      this.bgFade1.setTexture(nk).setAlpha(0);
-      this.bgFade2.setTexture(nk).setAlpha(0);
-    }
-    if (this.bgFading) {
-      this.bgFadeAlpha = Math.min(1, this.bgFadeAlpha + delta / 2000);
-      this.bgFade1.setAlpha(this.bgFadeAlpha);
-      this.bgFade2.setAlpha(this.bgFadeAlpha);
-      if (this.bgFadeAlpha >= 1) {
-        this.bgZone = targetZone; this.bgFading = false;
-        const key = ZONE_KEYS[this.bgZone];
-        this.bgImg1.setTexture(key); this.bgImg2.setTexture(key);
-        this.bgFade1.setAlpha(0);   this.bgFade2.setAlpha(0);
-      }
-    }
+    this.bgA.y += dy;
+    this.bgB.y += dy;
+    // Wrap whichever tile scrolls fully below the screen back to above the other
+    if (this.bgA.y - half > H) this.bgA.y = this.bgB.y - BG_DISP_H;
+    if (this.bgB.y - half > H) this.bgB.y = this.bgA.y - BG_DISP_H;
   }
 
   private movePlayer(delta: number): void {

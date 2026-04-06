@@ -66,35 +66,41 @@ export function buildAircraftCarrier(
   textureLoader: THREE.TextureLoader,
 ): CarrierBuild {
   const group = new THREE.Group();
-  group.position.set(0, 0, 15);
+  group.position.set(0, 0, 16);
 
-  const hullMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(P[4]!),
-  });
+  // Main hull — narrower than before so it doesn't dominate the frame
   const hull = new THREE.Mesh(
-    new THREE.BoxGeometry(52, 3.2, 18),
-    hullMat,
-  );
-  hull.position.set(0, 1.6, 0);
-  group.add(hull);
-
-  // Bow wedge (simple box)
-  const bow = new THREE.Mesh(
-    new THREE.BoxGeometry(14, 2.8, 8),
+    new THREE.BoxGeometry(46, 3.0, 16),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(P[3]!) }),
   );
-  bow.position.set(0, 1.5, -13);
-  bow.rotation.y = 0.08;
+  hull.position.set(0, 1.5, 0);
+  group.add(hull);
+
+  // Thin hull-side stripe (slightly lighter) for depth read
+  const sideMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(P[4]!) });
+  const sideF   = new THREE.Mesh(new THREE.BoxGeometry(46, 1.2, 0.4), sideMat);
+  sideF.position.set(0, 2.6, 8);
+  group.add(sideF);
+  const sideA = sideF.clone();
+  sideA.position.z = -8;
+  group.add(sideA);
+
+  // Bow — tapered forward section, flush with hull
+  const bow = new THREE.Mesh(
+    new THREE.BoxGeometry(10, 2.6, 7),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(P[2]!) }),
+  );
+  bow.position.set(0, 1.3, -11);
   group.add(bow);
 
-  const deckGeo = new THREE.PlaneGeometry(50, 20);
+  const deckGeo = new THREE.PlaneGeometry(44, 18);
   const deckMat = new THREE.MeshBasicMaterial({
     color: new THREE.Color(0xffffff),
     map: makeCinemawareDeckCanvasTexture(),
   });
   const deck = new THREE.Mesh(deckGeo, deckMat);
   deck.rotation.x = -Math.PI / 2;
-  deck.position.set(0, 3.25, 0);
+  deck.position.set(0, 3.1, 0);
   group.add(deck);
 
   textureLoader.load(
@@ -116,37 +122,41 @@ export function buildAircraftCarrier(
     },
   );
 
-  // Island superstructure (stacked blocks — “Bitmap” readable silhouette)
+  // Island superstructure — offset to starboard, readable silhouette
   const island = new THREE.Group();
-  island.position.set(11, 3.25, -2);
+  island.position.set(10, 3.1, -1);
+
   const stack = new THREE.Mesh(
-    new THREE.BoxGeometry(5, 6, 12),
+    new THREE.BoxGeometry(4.5, 6, 10),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(P[1]!) }),
   );
   stack.position.y = 3;
   island.add(stack);
+
   const bridge = new THREE.Mesh(
-    new THREE.BoxGeometry(4, 2.5, 6),
+    new THREE.BoxGeometry(3.5, 2.4, 5.5),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(P[4]!) }),
   );
-  bridge.position.set(-0.5, 7.2, 1);
+  bridge.position.set(-0.5, 7.2, 0.8);
   island.add(bridge);
+
   const mast = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.35, 0.5, 3, 6),
+    new THREE.CylinderGeometry(0.3, 0.45, 3, 6),
     new THREE.MeshBasicMaterial({ color: new THREE.Color(P[5]!) }),
   );
-  mast.position.set(0, 9.5, -2);
+  mast.position.set(0, 9.5, -1.5);
   island.add(mast);
+
   group.add(island);
 
-  // Elevator strip hints
+  // Catapult / deck lane lines
   for (let i = 0; i < 3; i++) {
     const line = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.15, 14),
+      new THREE.PlaneGeometry(0.2, 12),
       new THREE.MeshBasicMaterial({ color: new THREE.Color(P[0]!) }),
     );
     line.rotation.x = -Math.PI / 2;
-    line.position.set(-12 + i * 12, 3.26, 2);
+    line.position.set(-11 + i * 11, 3.12, 1.5);
     group.add(line);
   }
 

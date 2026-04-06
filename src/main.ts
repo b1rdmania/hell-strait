@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Game as PhaserGame } from "phaser";
 import { RetroPipeline } from "./retro/RetroPipeline";
 import { buildMeridianHub } from "./scenes/meridianHub";
-import { createInterceptGame } from "./scenes/interceptScene";
+import { createInterceptGame, type InterceptState } from "./scenes/interceptScene";
 import * as RetroAudio from "./audio/retroAudio";
 import meridianPalette from "./palettes/meridian.json";
 
@@ -33,6 +33,7 @@ const clock = new THREE.Clock();
 
 let phaserGame: PhaserGame | null = null;
 let interceptMode = false;
+let interceptGameOver = false;
 
 const pipeline = new RetroPipeline(
   renderer,
@@ -46,7 +47,6 @@ if (params.has("nodither")) pipeline.setDitherStrength(0);
 else if (params.has("dither")) pipeline.setDitherStrength(14);
 if (params.has("scan")) pipeline.setScanlineStrength(0.06);
 
-/** Meridian post used on hub — Gulf SDI matches Patrol (full colour @ 320×256, no quantize/dither). */
 const hubPostState = {
   quantize: true,
   dither: pipeline.material.uniforms.uDitherStrength.value as number,
@@ -58,8 +58,24 @@ const hubPostState = {
 // ---------------------------------------------------------------------------
 const introEl = document.getElementById("intro");
 const briefingEl = document.getElementById("briefing");
+const gulfBriefEl = document.getElementById("gulf-sdi-brief");
 const hintEl = document.getElementById("hint");
 const gameRoot = document.getElementById("game-root");
+
+// Gulf SDI HUD
+const gulfHud = document.getElementById("gulf-hud");
+const ghScore = document.getElementById("gh-score");
+const ghTime = document.getElementById("gh-time");
+const ghWave = document.getElementById("gh-wave");
+const ghPlants = document.getElementById("gh-plants");
+const ghInterceptors = document.getElementById("gh-interceptors");
+const ghBanner = document.getElementById("gh-banner");
+const ghCombo = document.getElementById("gh-combo");
+
+// Gulf SDI Game Over
+const gulfGameOver = document.getElementById("gulf-gameover");
+const goHead = document.getElementById("go-head");
+const goBody = document.getElementById("go-body");
 
 function show(el: HTMLElement | null): void {
   if (!el) return;
@@ -86,10 +102,107 @@ function setHint(text: string): void {
   hintEl.classList.add("is-visible");
 }
 
+// ---------------------------------------------------------------------------
+// Gulf SDI HUD management
+// ---------------------------------------------------------------------------
+
+let lastBanner: string | null = null;
+let lastCombo = 0;
+let comboFadeTimer = 0;
+
+function initGulfHud(): void {
+  if (!ghPlants) return;
+  ghPlants.innerHTML = "";
+  for (let i = 0; i < 5; i++) {
+    const d = document.createElement("div");
+    d.className = "gh-plant";
+    ghPlants.appendChild(d);
+  }
+  lastBanner = null;
+  lastCombo = 0;
+  comboFadeTimer = 0;
+}
+
+function updateGulfHud(state: InterceptState, dt: number): void {
+  if (ghScore) ghScore.textContent = `${state.score}`;
+  if (ghTime) ghTime.textContent = `${state.timeRemaining}s`;
+  if (ghWave) ghWave.textContent = `W${state.wave}`;
+  if (ghInterceptors) ghInterceptors.textContent = `SM-3 ×${state.interceptors}`;
+
+  if (ghPlants) {
+    const items = ghPlants.children;
+    for (let i = 0; i < items.length; i++) {
+      const alive = i < state.plants;
+      items[i]!.classList.toggle("dead", !alive);
+    }
+  }
+
+  // Banner
+  if (ghBanner) {
+    if (state.banner && state.banner !== lastBanner) {
+      ghBanner.textContent = state.banner;
+      ghBanner.classList.add("show");
+    } else if (!state.banner) {
+      ghBanner.classList.remove("show");
+    }
+    lastBanner = state.banner;
+  }
+
+  // Combo
+  if (ghCombo) {
+    if (state.combo > 1 && state.combo !== lastCombo) {
+      ghCombo.textContent = `×${state.combo} COMBO`;
+      ghCombo.classList.add("show");
+      comboFadeTimer = 1.2;
+    }
+    if (comboFadeTimer > 0) {
+      comboFadeTimer -= dt;
+      if (comboFadeTimer <= 0) ghCombo.classList.remove("show");
+    }
+    lastCombo = state.combo;
+  }
+}
+
+function showGulfGameOver(state: InterceptState): void {
+  if (!gulfGameOver || !goHead || !goBody) return;
+  interceptGameOver = true;
+  const won = state.outcome === "won";
+  const grade = intercept.getGrade();
+  const gradeColor = grade === "S" ? "#ffe050" : grade === "A" ? "#7cfcb4" : grade === "B" ? "#4a90d9" : "#c9a227";
+
+  goHead.textContent = won ? `VICTORY  ${grade}` : "INFRASTRUCTURE LOST";
+  goHead.style.color = won ? gradeColor : "#ff6655";
+
+  const body = won
+    ? `${state.plants} plants defended · wave ${state.wave}\nSCORE  ${state.score}`
+    : `${90 - state.timeRemaining}s survived · wave ${state.wave}\nSCORE  ${state.score}`;
+  goBody.textContent = body;
+
+  gulfGameOver.classList.add("is-active");
+}
+
+function hideGulfGameOver(): void {
+  interceptGameOver = false;
+  gulfGameOver?.classList.remove("is-active");
+}
+
+// ---------------------------------------------------------------------------
+// Gulf SDI — start / stop
+// ---------------------------------------------------------------------------
+
+function showGulfBrief(): void {
+  if (gulfBriefEl) {
+    show(gulfBriefEl);
+  } else {
+    startIntercept();
+  }
+}
+
 function startIntercept(): void {
   if (phaserGame || interceptMode) return;
   intercept.reset();
   interceptMode = true;
+  interceptGameOver = false;
   if (usePost) {
     pipeline.setPaletteQuantize(false);
     pipeline.setDitherStrength(0);
@@ -97,19 +210,32 @@ function startIntercept(): void {
   }
   if (introEl) introEl.hidden = true;
   if (briefingEl) briefingEl.hidden = true;
-  setHint("Gulf SDI — click to launch interceptors from the carrier · ESC — menu");
+  if (gulfBriefEl) gulfBriefEl.hidden = true;
+  gulfHud?.classList.add("is-active");
+  initGulfHud();
+  setHint("click to launch interceptors · ESC — menu");
 }
 
 function stopIntercept(): void {
   if (!interceptMode) return;
   interceptMode = false;
+  interceptGameOver = false;
   if (usePost) {
     pipeline.setPaletteQuantize(hubPostState.quantize);
     pipeline.setDitherStrength(hubPostState.dither);
     pipeline.setScanlineStrength(hubPostState.scan);
   }
+  gulfHud?.classList.remove("is-active");
+  hideGulfGameOver();
   show(introEl);
   setHint("1 patrol · 2 briefing · 3 Gulf SDI (carrier)");
+}
+
+function restartIntercept(): void {
+  hideGulfGameOver();
+  intercept.reset();
+  interceptGameOver = false;
+  initGulfHud();
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +277,7 @@ window.addEventListener("keydown", unlockOnce, { once: true });
 
 // Gulf SDI — pointer on Three canvas
 renderer.domElement.addEventListener("pointerdown", (e) => {
-  if (!interceptMode) return;
+  if (!interceptMode || interceptGameOver) return;
   intercept.onPointerDown(e, renderer.domElement);
 });
 
@@ -169,7 +295,7 @@ document.getElementById("btn-brief")?.addEventListener("click", () => {
 });
 document.getElementById("btn-intercept")?.addEventListener("click", () => {
   RetroAudio.playUi();
-  hide(introEl, () => startIntercept());
+  hide(introEl, () => showGulfBrief());
 });
 
 document.getElementById("brief-play")?.addEventListener("click", () => {
@@ -181,6 +307,16 @@ document.getElementById("brief-back")?.addEventListener("click", () => {
   hide(briefingEl, () => show(introEl));
 });
 
+// Gulf SDI briefing buttons
+document.getElementById("gulf-play")?.addEventListener("click", () => {
+  RetroAudio.playUi();
+  hide(gulfBriefEl, () => startIntercept());
+});
+document.getElementById("gulf-back")?.addEventListener("click", () => {
+  RetroAudio.playUi();
+  hide(gulfBriefEl, () => show(introEl));
+});
+
 // ---------------------------------------------------------------------------
 // Keyboard shortcuts
 // ---------------------------------------------------------------------------
@@ -189,6 +325,20 @@ window.addEventListener("keydown", (e) => {
   if (phaserGame) return;
 
   if (interceptMode) {
+    if (interceptGameOver) {
+      if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        restartIntercept();
+        return;
+      }
+      if (e.key === "Escape" || e.key === "Enter") {
+        e.preventDefault();
+        RetroAudio.playUi();
+        stopIntercept();
+        return;
+      }
+      return;
+    }
     if (e.key === "Escape") {
       e.preventDefault();
       RetroAudio.playUi();
@@ -199,10 +349,14 @@ window.addEventListener("keydown", (e) => {
 
   const introVisible = introEl && !introEl.hidden;
   const briefingVisible = briefingEl && !briefingEl.hidden;
+  const gulfBriefVisible = gulfBriefEl && !gulfBriefEl.hidden;
 
   if (e.key === "Escape") {
     e.preventDefault();
-    if (briefingVisible) {
+    if (gulfBriefVisible) {
+      RetroAudio.playUi();
+      hide(gulfBriefEl, () => show(introEl));
+    } else if (briefingVisible) {
       RetroAudio.playUi();
       hide(briefingEl, () => show(introEl));
     } else if (!introVisible) {
@@ -214,7 +368,8 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "1") {
     e.preventDefault();
     RetroAudio.playUi();
-    if (introVisible) hide(introEl, () => void startPatrol());
+    if (gulfBriefVisible) hide(gulfBriefEl, () => void startPatrol());
+    else if (introVisible) hide(introEl, () => void startPatrol());
     else if (briefingVisible) hide(briefingEl, () => void startPatrol());
     else void startPatrol();
   }
@@ -228,8 +383,12 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "3") {
     e.preventDefault();
     RetroAudio.playUi();
-    if (introVisible) hide(introEl, () => startIntercept());
-    else startIntercept();
+    if (introVisible) hide(introEl, () => showGulfBrief());
+    else if (gulfBriefVisible) {
+      hide(gulfBriefEl, () => startIntercept());
+    } else {
+      showGulfBrief();
+    }
   }
 });
 
@@ -256,6 +415,8 @@ setHint("1 patrol · 2 briefing · 3 Gulf SDI (carrier)");
 // Render loop
 // ---------------------------------------------------------------------------
 
+let prevOutcome: string = "playing";
+
 function tick(): void {
   const dt = clock.getDelta();
 
@@ -265,9 +426,17 @@ function tick(): void {
   }
 
   if (interceptMode) {
-    setHint(intercept.update(dt));
+    const state = intercept.update(dt);
+    updateGulfHud(state, dt);
+
+    if (state.outcome !== "playing" && prevOutcome === "playing") {
+      showGulfGameOver(state);
+    }
+    prevOutcome = state.outcome;
+
     pipeline.render(intercept.scene, intercept.camera);
   } else {
+    prevOutcome = "playing";
     pipeline.render(hub.scene, hub.camera);
   }
 

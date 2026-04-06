@@ -286,6 +286,16 @@
         font-size: clamp(18px, 3vw, 26px);
       }
 
+      /* ── Gulf SDI carrier selection ─────────────────────────── */
+      li.gulf-carrier {
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.12s;
+      }
+      li.gulf-carrier:hover { color: #e8c898; }
+      li.gulf-carrier.selected { color: #ffe080 !important; }
+      li.gulf-carrier.selected::before { color: #ffe080 !important; }
+
       /* ── Hint bar ───────────────────────────────────────────── */
       #hint {
         position: fixed;
@@ -298,6 +308,108 @@
         transition: opacity 0.3s ease;
       }
       #hint.is-visible { opacity: 1; }
+
+      /* ── Gulf SDI HUD ───────────────────────────────────────── */
+      #gulf-hud {
+        position: fixed;
+        inset: 0;
+        z-index: 25;
+        pointer-events: none;
+        font-family: 'VT323', monospace;
+        display: none;
+      }
+      #gulf-hud.is-active { display: block; }
+
+      .gh-top {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 28px;
+        background: rgba(0,0,0,0.55);
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+        gap: 8px;
+      }
+      .gh-time   { color: #e8eef2; font-size: 16px; flex: 1; text-align: center; }
+      .gh-score  { color: #c9a227; font-size: 16px; }
+      .gh-wave   { color: #8a9ba8; font-size: 16px; }
+
+      .gh-plants {
+        position: absolute;
+        bottom: 32px; left: 8px;
+        display: flex;
+        gap: 4px;
+      }
+      .gh-plant {
+        width: 10px; height: 14px;
+        background: #7cfcb4;
+        border: 1px solid rgba(0,0,0,0.4);
+      }
+      .gh-plant.dead { background: #3a1010; border-color: #5a1010; }
+
+      .gh-interceptors {
+        position: absolute;
+        bottom: 32px; right: 8px;
+        color: #e6c84a;
+        font-size: 14px;
+      }
+
+      .gh-banner {
+        position: absolute;
+        top: 36px; left: 0; right: 0;
+        text-align: center;
+        font-family: 'VT323', monospace;
+        font-size: 20px;
+        color: #d94a2a;
+        letter-spacing: 0.15em;
+        text-shadow: 0 0 12px rgba(217,74,42,0.6);
+        opacity: 0;
+        transition: opacity 0.15s ease;
+      }
+      .gh-banner.show { opacity: 1; }
+
+      .gh-combo {
+        position: absolute;
+        top: 60px; left: 0; right: 0;
+        text-align: center;
+        font-size: 16px;
+        color: #ffe050;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+      .gh-combo.show { opacity: 1; }
+
+      /* ── Gulf SDI Game Over ─────────────────────────────────── */
+      #gulf-gameover {
+        position: fixed;
+        inset: 0;
+        z-index: 26;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.65);
+        font-family: 'VT323', monospace;
+        pointer-events: auto;
+      }
+      #gulf-gameover.is-active { display: flex; }
+      .go-head {
+        font-family: 'Libre Baskerville', Georgia, serif;
+        font-size: 26px;
+        letter-spacing: 0.06em;
+        margin-bottom: 8px;
+      }
+      .go-body {
+        font-size: 20px;
+        color: #e8eef2;
+        text-align: center;
+        line-height: 1.6;
+        margin-bottom: 16px;
+      }
+      .go-controls {
+        font-size: 15px;
+        color: #8a9ba8;
+      }
     </style>
   </head>
   <body>
@@ -423,6 +535,117 @@
         </button>
       </div>
 
+    </div>
+
+    <!-- ── GULF SDI BRIEFING ─────────────────────────────────────────── -->
+    <div id="gulf-sdi-brief" class="screen" hidden aria-label="Gulf SDI briefing">
+
+      <div class="br-header">
+        <p class="br-classify">MERIDIAN COMMAND &nbsp;·&nbsp; GULF SDI &nbsp;·&nbsp; CLASSIFICATION: SECRET</p>
+        <h2 class="br-title">Gulf SDI — Carrier Air Defence</h2>
+        <p class="br-sub">ENGAGEMENT AUTHORITY BRIEF &nbsp;·&nbsp; 0542Z &nbsp;·&nbsp; ASHAR SECTOR</p>
+      </div>
+
+      <div class="copper" aria-hidden="true"></div>
+
+      <div class="br-body">
+
+        <div class="br-section">
+          <h3>Situation</h3>
+          <p>Ashar ballistic missile forces have moved
+          SHAHAB-class mobile launchers to forward
+          staging areas northeast of the Strait.
+          ISTAR confirms 6–12 missiles on standby for
+          sequential strike against Meridian coalition
+          shore infrastructure.</p>
+          <br>
+          <p>Simultaneously, Ashar drone cells have
+          activated along the eastern coast. SHAHEED-class
+          delta-wing loitering munitions will approach
+          at low altitude, exploiting terrain masking
+          from the flanks.</p>
+        </div>
+
+        <div class="br-section">
+          <h3>Threat Assessment</h3>
+          <ul>
+            <li class="threat-head">SHAHAB BALLISTIC MISSILE</li>
+            <li class="threat-stat">Terminal-phase steep descent from high altitude</li>
+            <li class="threat-stat">Armoured penetrator warhead — damage ×3 per strike</li>
+            <li class="threat-stat">HP 3 — requires multiple intercepts or blast kill</li>
+            <li class="threat-head">SHAHEED LOITERING DRONE</li>
+            <li class="threat-stat">Low-altitude lateral swarm — approaches from flanks</li>
+            <li class="threat-stat">Light warhead — damage ×1 per breach</li>
+            <li class="threat-stat">HP 1 — single intercept or blast sufficient</li>
+          </ul>
+        </div>
+
+        <div class="br-section">
+          <h3>Platform</h3>
+          <p style="font-size:clamp(12px,1.8vw,16px);color:rgba(200,180,150,0.6);margin-bottom:6px;">
+            Click to select your hull:
+          </p>
+          <ul id="gulf-carriers">
+            <li class="threat-head gulf-carrier" data-carrier="DDG51">DDG-51 ARLEIGH BURKE</li>
+            <li class="threat-stat">8 SM-3 · 10s reload · destroyer — fast response</li>
+            <li class="threat-head gulf-carrier selected" data-carrier="CG47">CG-47 TICONDEROGA</li>
+            <li class="threat-stat">12 SM-3 · 16s reload · cruiser — balanced loadout</li>
+            <li class="threat-head gulf-carrier" data-carrier="CVN71">CVN-71 THEODORE ROOSEVELT</li>
+            <li class="threat-stat">16 SM-3 · 22s reload · carrier — maximum capacity</li>
+          </ul>
+        </div>
+
+        <div class="br-section">
+          <h3>Objective &amp; Fire Control</h3>
+          <p>Defend all 5 coastal plants for 90 seconds
+          until relief squadron arrives on station.
+          Resupply drops restore interceptors on the
+          reload cycle.</p>
+          <br>
+          <ul>
+            <li class="key-line"><span class="kbd">CLICK</span> Launch SM-3 to aimed point</li>
+            <li class="key-line" style="color:#8b9aa8;font-size:clamp(11px,1.7vw,15px);padding-left:14px;">
+              Interceptors detonate at target — lead threats</li>
+            <li class="key-line"><span class="kbd">ESC</span> Abort / return to command</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="copper-thin" aria-hidden="true"></div>
+
+      <div class="br-footer">
+        <button type="button" id="gulf-play">
+          <span class="ts-key">1</span>
+          <span class="ts-label">LAUNCH INTERCEPTORS</span>
+        </button>
+        <span class="divider">·</span>
+        <button type="button" id="gulf-back">
+          <span class="ts-key">ESC</span>
+          <span class="ts-label">STAND DOWN</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- ── Gulf SDI HUD (shown during play) ─────────────────── -->
+    <div id="gulf-hud" aria-label="Gulf SDI HUD">
+      <div class="gh-top">
+        <span class="gh-score" id="gh-score">0</span>
+        <span class="gh-time" id="gh-time">90s</span>
+        <span class="gh-wave" id="gh-wave">W0</span>
+      </div>
+      <div class="gh-plants" id="gh-plants"></div>
+      <div class="gh-interceptors" id="gh-interceptors">SM-3 ×12</div>
+      <div class="gh-banner" id="gh-banner"></div>
+      <div class="gh-combo" id="gh-combo"></div>
+    </div>
+
+    <!-- ── Gulf SDI Game Over ─────────────────────────────────── -->
+    <div id="gulf-gameover">
+      <div class="go-head" id="go-head">VICTORY</div>
+      <div class="go-body" id="go-body"></div>
+      <div class="go-controls">ENTER / ESC — menu  ·  R — play again</div>
     </div>
 
     <div id="game-root" aria-label="Patrol game"></div>

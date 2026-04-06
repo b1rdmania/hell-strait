@@ -16,22 +16,37 @@ const WIN_SURVIVE_MS = 90_000;
 const STARTING_INTERCEPTORS = 12;
 const INTERCEPTOR_MAX = 24;
 const RESUPPLY_EVERY_MS = 16_000;
+const COMBO_WINDOW_MS = 1500;
+const SURGE_MS = 60_000;
 
 export type InterceptOutcome = "playing" | "won" | "lost";
+
+type WaveKind = "normal" | "salvo" | "saturation" | "scatter";
+
+export type InterceptState = {
+  outcome: InterceptOutcome;
+  plants: number;
+  plantsMax: number;
+  interceptors: number;
+  interceptorsMax: number;
+  timeRemaining: number;
+  score: number;
+  wave: number;
+  combo: number;
+  banner: string | null;
+};
 
 export type InterceptAPI = {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
-  update: (dt: number) => string;
+  update: (dt: number) => InterceptState;
   onPointerDown: (event: PointerEvent, domElement: HTMLElement) => void;
   getOutcome: () => InterceptOutcome;
+  getState: () => InterceptState;
+  getGrade: () => string;
   reset: () => void;
 };
 
-/**
- * Gulf SDI — Missile Command style: defend oil & desalination plants from inbound missiles.
- * Flat MeshBasic materials for stable retro palette read.
- */
 function floatBetween(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
@@ -45,9 +60,7 @@ export function createInterceptGame(): InterceptAPI {
   const c = (hex: string) => new THREE.Color(hex);
 
   const scene = new THREE.Scene();
-  // Match Phaser patrol (`launchGame` backgroundColor) — quantizes cleanly with RetroPipeline.
   scene.background = new THREE.Color(0x050a12);
-  // No fog: palette pass + Patrol-style flat colours already unify the look; fog was washing detail.
 
   const camera = new THREE.PerspectiveCamera(50, 320 / 256, 0.1, 220);
   camera.position.set(0, 36, 48);
@@ -61,7 +74,6 @@ export function createInterceptGame(): InterceptAPI {
   ground.position.set(0, 0, -5);
   scene.add(ground);
 
-  // Shallow gulf water band
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 22),
     new THREE.MeshBasicMaterial({ color: c(P[2]!) }),
@@ -69,6 +81,20 @@ export function createInterceptGame(): InterceptAPI {
   water.rotation.x = -Math.PI / 2;
   water.position.set(0, 0.02, 12);
   scene.add(water);
+
+  // Flash overlay for screen shake / damage
+  const flashGeo = new THREE.PlaneGeometry(200, 200);
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xff2200,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,
+  });
+  const flashQuad = new THREE.Mesh(flashGeo, flashMat);
+  flashQuad.position.set(0, 0, camera.position.z - 1);
+  flashQuad.renderOrder = 999;
+  scene.add(flashQuad);
+  let flashTimer = 0;
 
   type Plant = {
     mesh: THREE.Group;
@@ -82,14 +108,12 @@ export function createInterceptGame(): InterceptAPI {
   for (const x of plantXs) {
     const g = new THREE.Group();
     g.position.set(x, 0, -8);
-    // Oil cluster (dark tanks)
     const oil = new THREE.Mesh(
       new THREE.BoxGeometry(4, 2.2, 3),
       new THREE.MeshBasicMaterial({ color: c(P[1]!) }),
     );
     oil.position.y = 1.1;
     g.add(oil);
-    // Desal / process (lighter block + blue hint)
     const desal = new THREE.Mesh(
       new THREE.BoxGeometry(2.8, 3, 2.2),
       new THREE.MeshBasicMaterial({ color: c(P[4]!) }),
@@ -112,6 +136,35 @@ export function createInterceptGame(): InterceptAPI {
   const inboundTex = makeInboundSpriteTexture();
   const interceptorTex = makeInterceptorSpriteTexture();
 
+  // Explosion texture — bright circle
+  const explTex = (() => {
+    const sz = 32;
+    const cv = document.createElement("canvas");
+    cv.width = sz;
+    cv.height = sz;
+    const ctx = cv.getContext("2d")!;
+    ctx.imageSmoothingEnabled = false;
+    const r = sz / 2;
+    ctx.fillStyle = "#ffe050";
+    ctx.beginPath();
+    ctx.arc(r, r, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ff6600";
+    ctx.beginPath();
+    ctx.arc(r, r, r * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(r, r, r * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    return tex;
+  })();
+
   type Missile = {
     mesh: THREE.Sprite;
     vel: THREE.Vector3;
@@ -124,10 +177,16 @@ export function createInterceptGame(): InterceptAPI {
     alive: boolean;
   };
 
+  type Explosion = {
+    mesh: THREE.Sprite;
+    age: number;
+    maxAge: number;
+  };
+
   const missiles: Missile[] = [];
   const interceptors: Interceptor[] = [];
+  const explosions: Explosion[] = [];
 
-  /** Shared materials — canvas pixel art (PatrolScene-style), nearest-filtered. */
   const inboundMat = new THREE.SpriteMaterial({
     map: inboundTex,
     color: 0xffffff,
@@ -153,6 +212,13 @@ export function createInterceptGame(): InterceptAPI {
   let resupplyAcc = 0;
   let interceptorsLeft = STARTING_INTERCEPTORS;
   let wave = 0;
+  let score = 0;
+  let comboCount = 0;
+  let lastKillTime = 0;
+  let banner: string | null = null;
+  let bannerTimer = 0;
+  let surgeFired = false;
+  let waveKindAcc = 0;
 
   const tmpV = new THREE.Vector3();
   const raycaster = new THREE.Raycaster();
@@ -167,6 +233,34 @@ export function createInterceptGame(): InterceptAPI {
     const a = alivePlants();
     if (a.length === 0) return null;
     return a[intBetween(0, a.length - 1)]!;
+  }
+
+  function showBanner(text: string, durationMs = 2200): void {
+    banner = text;
+    bannerTimer = durationMs;
+  }
+
+  function spawnExplosion(pos: THREE.Vector3): void {
+    const mat = new THREE.SpriteMaterial({
+      map: explTex,
+      transparent: true,
+      opacity: 1,
+      depthTest: true,
+      fog: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Sprite(mat);
+    mesh.position.copy(pos);
+    mesh.scale.set(3, 3, 1);
+    mesh.renderOrder = 100;
+    scene.add(mesh);
+    explosions.push({ mesh, age: 0, maxAge: 0.45 });
+  }
+
+  function triggerFlash(color: number, intensity: number): void {
+    flashMat.color.setHex(color);
+    flashMat.opacity = intensity;
+    flashTimer = 0.15;
   }
 
   function spawnMissile(): void {
@@ -188,7 +282,56 @@ export function createInterceptGame(): InterceptAPI {
     const vel = tmpV.multiplyScalar(MISSILE_SPEED);
 
     missiles.push({ mesh, vel: vel.clone(), alive: true });
+  }
+
+  function pickWaveKind(): WaveKind {
+    if (wave < 4) return "normal";
+    waveKindAcc++;
+    if (waveKindAcc >= 3) {
+      waveKindAcc = 0;
+      const kinds: WaveKind[] = wave > 8
+        ? ["salvo", "saturation", "scatter"]
+        : ["salvo", "scatter"];
+      return kinds[intBetween(0, kinds.length - 1)]!;
+    }
+    return "normal";
+  }
+
+  function spawnWave(): void {
     wave += 1;
+    const kind = pickWaveKind();
+    const n = 1 + Math.min(3, Math.floor(timeMs / 25_000));
+
+    switch (kind) {
+      case "salvo":
+        showBanner("MISSILE SALVO");
+        for (let i = 0; i < n + 2; i++) {
+          setTimeout(() => spawnMissile(), i * 150);
+        }
+        break;
+      case "saturation":
+        showBanner("SATURATION STRIKE");
+        for (let i = 0; i < n + 4; i++) {
+          setTimeout(() => spawnMissile(), i * 80);
+        }
+        break;
+      case "scatter":
+        showBanner("SCATTER PATTERN");
+        for (let i = 0; i < n + 1; i++) spawnMissile();
+        break;
+      default:
+        for (let i = 0; i < n; i++) spawnMissile();
+        break;
+    }
+  }
+
+  function scoreIntercept(): void {
+    const base = 30;
+    const now = timeMs;
+    comboCount = (now - lastKillTime < COMBO_WINDOW_MS) ? comboCount + 1 : 1;
+    lastKillTime = now;
+    const mult = Math.min(4, comboCount);
+    score += base * mult;
   }
 
   function fireInterceptor(clientX: number, clientY: number, domElement: HTMLElement): void {
@@ -220,14 +363,41 @@ export function createInterceptGame(): InterceptAPI {
     interceptors.push({ mesh, vel: dir.clone(), alive: true });
   }
 
-  function update(dt: number): string {
+  function getGrade(): string {
+    const pct = alivePlants().length / plants.length;
+    if (pct >= 0.8) return "S";
+    if (pct >= 0.6) return "A";
+    if (pct >= 0.4) return "B";
+    if (pct >= 0.2) return "C";
+    return "D";
+  }
+
+  function buildState(): InterceptState {
+    return {
+      outcome,
+      plants: alivePlants().length,
+      plantsMax: plants.length,
+      interceptors: interceptorsLeft,
+      interceptorsMax: INTERCEPTOR_MAX,
+      timeRemaining: Math.max(0, Math.ceil((WIN_SURVIVE_MS - timeMs) / 1000)),
+      score,
+      wave,
+      combo: comboCount,
+      banner,
+    };
+  }
+
+  function update(dt: number): InterceptState {
     if (outcome !== "playing") {
       if (outcome !== lastOutcome) {
         lastOutcome = outcome;
         if (outcome === "won") RetroAudio.playWin();
         else RetroAudio.playLose();
       }
-      return outcome === "won" ? "VICTORY — GULF HOLDING" : "CRITICAL INFRASTRUCTURE LOST";
+      // Keep ticking explosions
+      tickExplosions(dt);
+      tickFlash(dt);
+      return buildState();
     }
     lastOutcome = "playing";
 
@@ -236,10 +406,22 @@ export function createInterceptGame(): InterceptAPI {
     spawnAcc += dtMs;
     resupplyAcc += dtMs;
 
-    if (spawnAcc >= SPAWN_EVERY_MS) {
+    // Banner countdown
+    if (banner && bannerTimer > 0) {
+      bannerTimer -= dtMs;
+      if (bannerTimer <= 0) banner = null;
+    }
+
+    // Surge at 60s
+    if (!surgeFired && timeMs >= SURGE_MS) {
+      surgeFired = true;
+      showBanner("FINAL SALVO — ALL UNITS");
+      RetroAudio.playAlert();
+    }
+
+    if (spawnAcc >= (surgeFired ? SPAWN_EVERY_MS * 0.55 : SPAWN_EVERY_MS)) {
       spawnAcc = 0;
-      const n = 1 + Math.min(2, Math.floor(timeMs / 25_000));
-      for (let i = 0; i < n; i++) spawnMissile();
+      spawnWave();
     }
 
     if (resupplyAcc >= RESUPPLY_EVERY_MS) {
@@ -247,7 +429,8 @@ export function createInterceptGame(): InterceptAPI {
       const old = interceptorsLeft;
       interceptorsLeft = Math.min(INTERCEPTOR_MAX, interceptorsLeft + 6);
       if (interceptorsLeft > old) {
-        /* resupply ping — audio handled in main if needed */
+        showBanner("INTERCEPTORS RESUPPLIED");
+        RetroAudio.playUi();
       }
     }
 
@@ -268,10 +451,13 @@ export function createInterceptGame(): InterceptAPI {
       if (target.p && m.mesh.position.distanceTo(tmpV.set(target.p.x, 1.5, target.p.z)) < 2.2) {
         target.p.hp -= 1;
         RetroAudio.playDamage();
+        spawnExplosion(m.mesh.position.clone());
+        triggerFlash(0xff2200, 0.25);
         m.alive = false;
         m.mesh.visible = false;
         if (target.p.hp <= 0) {
           target.p.mesh.visible = false;
+          triggerFlash(0xff0000, 0.5);
         }
         if (alivePlants().length === 0) outcome = "lost";
       }
@@ -291,6 +477,9 @@ export function createInterceptGame(): InterceptAPI {
         if (!m.alive) continue;
         if (s.mesh.position.distanceTo(m.mesh.position) < HIT_R) {
           RetroAudio.playHit();
+          scoreIntercept();
+          spawnExplosion(m.mesh.position.clone());
+          triggerFlash(0x1a3a5a, 0.12);
           m.alive = false;
           m.mesh.visible = false;
           s.alive = false;
@@ -305,24 +494,54 @@ export function createInterceptGame(): InterceptAPI {
       }
     }
 
+    tickExplosions(dt);
+    tickFlash(dt);
+
     if (timeMs >= WIN_SURVIVE_MS && alivePlants().length > 0) {
       outcome = "won";
     }
 
-    const t = Math.max(0, Math.ceil((WIN_SURVIVE_MS - timeMs) / 1000));
-    const ap = alivePlants().length;
-    return `CARRIER CVN · Gulf SDI · plants ${ap}/5 · interceptors ${interceptorsLeft} · time ${t}s · click · ESC`;
+    return buildState();
   }
 
-  function getOutcome(): InterceptOutcome {
-    return outcome;
+  function tickExplosions(dt: number): void {
+    for (let i = explosions.length - 1; i >= 0; i--) {
+      const e = explosions[i]!;
+      e.age += dt;
+      const t = e.age / e.maxAge;
+      if (t >= 1) {
+        e.mesh.removeFromParent();
+        (e.mesh.material as THREE.SpriteMaterial).dispose();
+        explosions.splice(i, 1);
+        continue;
+      }
+      const s = 3 + t * 8;
+      e.mesh.scale.set(s, s, 1);
+      (e.mesh.material as THREE.SpriteMaterial).opacity = 1 - t;
+    }
+  }
+
+  function tickFlash(dt: number): void {
+    if (flashTimer > 0) {
+      flashTimer -= dt;
+      if (flashTimer <= 0) {
+        flashMat.opacity = 0;
+      } else {
+        flashMat.opacity *= 0.88;
+      }
+    }
   }
 
   function reset(): void {
     for (const m of missiles) m.mesh.removeFromParent();
     for (const s of interceptors) s.mesh.removeFromParent();
+    for (const e of explosions) {
+      e.mesh.removeFromParent();
+      (e.mesh.material as THREE.SpriteMaterial).dispose();
+    }
     missiles.length = 0;
     interceptors.length = 0;
+    explosions.length = 0;
     outcome = "playing";
     lastOutcome = "playing";
     timeMs = 0;
@@ -330,6 +549,15 @@ export function createInterceptGame(): InterceptAPI {
     resupplyAcc = 0;
     interceptorsLeft = STARTING_INTERCEPTORS;
     wave = 0;
+    score = 0;
+    comboCount = 0;
+    lastKillTime = 0;
+    banner = null;
+    bannerTimer = 0;
+    surgeFired = false;
+    waveKindAcc = 0;
+    flashMat.opacity = 0;
+    flashTimer = 0;
     for (const p of plants) {
       p.hp = PLANT_HP;
       p.mesh.visible = true;
@@ -342,6 +570,12 @@ export function createInterceptGame(): InterceptAPI {
     update,
     onPointerDown: (e, el) => fireInterceptor(e.clientX, e.clientY, el),
     getOutcome,
+    getState: buildState,
+    getGrade,
     reset,
   };
+
+  function getOutcome(): InterceptOutcome {
+    return outcome;
+  }
 }
