@@ -3,41 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="Hell Strait — full strait-ops mission: patrol game, command deck, Ashar briefing, EGA demo. Amiga-era PAL 320×256 in the browser."
-    />
-    <meta name="theme-color" content="#030508" />
-    <title>Hell Strait — Strait Command</title>
+    <meta name="description" content="Hell Strait — defend the convoy through a contested strait. Amiga-era PAL game in the browser." />
+    <meta name="theme-color" content="#000000" />
+    <title>Hell Strait</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,700;1,700&family=VT323&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Libre+Baskerville:wght@700&display=swap" rel="stylesheet" />
     <style>
-      :root {
-        --amiga-bg-deep: #030508;
-        --amiga-sky-0: #1a2840;
-        --amiga-sky-1: #0d1520;
-        --amiga-horizon: #c94a2a;
-        --amiga-sea: #050a12;
-        --chrome-gold: #c9a227;
-        --chrome-gold-dim: #8a7018;
-        --chrome-steel: #3d5468;
-        --chrome-panel: #0c1218;
-        --text-paper: #e8dcc4;
-        --text-dim: #8a9ba8;
-      }
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-      html,
-      body {
-        margin: 0;
+      html, body {
         height: 100%;
-        background: var(--amiga-bg-deep);
+        background: #000;
         overflow: hidden;
+        font-family: 'VT323', monospace;
       }
 
+      /* ── Three.js canvas ────────────────────────────────────── */
       #three-canvas {
         position: fixed;
         inset: 0;
@@ -46,329 +28,401 @@
         height: 100%;
         z-index: 0;
       }
+
+      /* ── Phaser game container ──────────────────────────────── */
       #game-root {
         position: fixed;
         inset: 0;
         z-index: 12;
         display: none;
       }
-      #game-root.is-active {
-        display: block;
-      }
+      #game-root.is-active { display: block; }
       #game-root canvas {
         image-rendering: pixelated;
         image-rendering: crisp-edges;
       }
-      body.mode-game #three-canvas {
-        visibility: hidden;
-        pointer-events: none;
-      }
+      body.mode-game #three-canvas { visibility: hidden; pointer-events: none; }
 
-      #hint {
-        position: fixed;
-        bottom: 10px;
-        left: 10px;
-        z-index: 30;
-        font: 12px/1.4 "VT323", ui-monospace, monospace;
-        color: var(--text-dim);
-        text-shadow: 0 1px 0 #000;
-        pointer-events: none;
-        max-width: min(560px, 92vw);
-        opacity: 0;
-        transition: opacity 0.35s ease;
-      }
-      #hint.is-visible {
-        opacity: 1;
-      }
-
-      /*
-        Title screen = full-viewport “Cinemaware plate” (HTML/CSS stand-in).
-        For ship: replace .title-screen__art-inner with <canvas> or <img> painted art,
-        or hide #intro and show a Three.js full-screen scene using the same palette.
-      */
-      #intro.title-screen {
+      /* ── Shared overlay base ────────────────────────────────── */
+      .screen {
         position: fixed;
         inset: 0;
         z-index: 20;
-        box-sizing: border-box;
-        padding: min(3vw, 20px);
         display: flex;
         flex-direction: column;
-        min-height: 100%;
-        min-height: 100dvh;
-        background: radial-gradient(
-            ellipse 100% 70% at 50% -10%,
-            rgba(74, 144, 217, 0.12),
-            transparent 55%
-          ),
-          linear-gradient(
-            180deg,
-            var(--amiga-sky-0) 0%,
-            var(--amiga-sky-1) 38%,
-            #1a1512 52%,
-            var(--amiga-horizon) 54%,
-            #0a0806 56%,
-            var(--amiga-sea) 72%,
-            var(--amiga-bg-deep) 100%
-          );
-        transition: opacity 0.5s ease, visibility 0.5s ease;
+        background: #000;
+        transition: opacity 0.4s ease;
       }
-      #intro.title-screen[hidden] {
-        display: none;
-      }
-      #intro.title-screen.is-leaving {
-        opacity: 0;
-        pointer-events: none;
-      }
+      .screen[hidden] { display: none !important; }
+      .screen.is-leaving { opacity: 0; pointer-events: none; }
 
-      .title-screen__crt {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        z-index: 0;
+      /* Copper separator bar */
+      .copper {
+        height: 3px;
+        flex-shrink: 0;
+        background: linear-gradient(90deg, #6a4800, #c9a227 20%, #ffe080 50%, #c9a227 80%, #6a4800);
+      }
+      .copper-thin {
+        height: 1px;
+        flex-shrink: 0;
+        background: linear-gradient(90deg, transparent, #c9a227 20%, #ffe080 50%, #c9a227 80%, transparent);
         opacity: 0.45;
-        background: repeating-linear-gradient(
-          0deg,
-          rgba(0, 0, 0, 0.09) 0px,
-          rgba(0, 0, 0, 0.09) 1px,
-          transparent 1px,
-          transparent 2px
-        );
-        mix-blend-mode: multiply;
-      }
-      .title-screen__vignette {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        z-index: 1;
-        background: radial-gradient(
-          ellipse 90% 65% at 50% 45%,
-          transparent 30%,
-          rgba(0, 0, 0, 0.55) 100%
-        );
       }
 
-      .title-screen__frame {
-        position: relative;
-        z-index: 2;
-        flex: 1;
-        display: flex;
-        flex-direction: column;
+      /* ── TITLE SCREEN ───────────────────────────────────────── */
+
+      /* Painted artwork — fills top portion */
+      .ts-art {
+        flex: 1 1 auto;
         min-height: 0;
-        border: 3px solid var(--chrome-gold);
-        box-shadow: inset 0 0 0 1px var(--chrome-steel), 0 0 0 2px #0a0e14,
-          0 16px 48px rgba(0, 0, 0, 0.75);
-        background: linear-gradient(
-          180deg,
-          rgba(8, 12, 18, 0.5) 0%,
-          rgba(5, 8, 12, 0.35) 100%
-        );
-      }
-
-      .title-screen__header {
-        text-align: center;
-        padding: clamp(12px, 3vw, 28px) clamp(16px, 4vw, 40px) 8px;
-      }
-      .title-screen__eyebrow {
-        margin: 0 0 6px;
-        font: 22px/1.2 "VT323", monospace;
-        letter-spacing: 0.28em;
-        text-transform: uppercase;
-        color: var(--text-dim);
-      }
-      .title-screen__logo {
-        margin: 0;
-        font: 700 clamp(2rem, 7.5vw, 3.35rem) / 1.05 "Libre Baskerville", Georgia,
-          serif;
-        color: var(--text-paper);
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        text-shadow: 0 2px 0 var(--chrome-gold-dim), 0 -1px 0 rgba(255, 240, 200, 0.35),
-          0 0 40px rgba(201, 162, 39, 0.25);
-      }
-      .title-screen__subtitle {
-        margin: 10px 0 0;
-        font: italic 1rem/1.4 "Libre Baskerville", Georgia, serif;
-        color: rgba(232, 220, 196, 0.85);
-      }
-      .title-screen__strap {
-        margin: 14px auto 0;
-        max-width: 36em;
-        font: 20px/1.35 "VT323", monospace;
-        color: var(--text-dim);
-      }
-
-      /* Middle painting: /public/title-bg.png — swap file or switch to WebGL plate later */
-      .title-screen__art {
+        background: url('/generated/command-deck.png') center 40% / cover no-repeat;
         position: relative;
-        flex: 1;
-        min-height: min(28vh, 220px);
-        margin: 8px 16px 12px;
-        border: 1px solid rgba(61, 84, 104, 0.85);
-        background: url("/title-bg.png") center / cover no-repeat;
         overflow: hidden;
       }
-      .title-screen__art-inner {
+      .ts-art::after {
+        content: '';
         position: absolute;
         inset: 0;
-        pointer-events: none;
-        background: linear-gradient(
-          180deg,
-          rgba(3, 5, 8, 0.1) 0%,
-          rgba(3, 5, 8, 0.45) 100%
+        background: repeating-linear-gradient(
+          0deg,
+          rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px,
+          transparent 1px, transparent 3px
         );
+        pointer-events: none;
+      }
+      .ts-art-inner {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        padding: 12px 24px 0;
+        background: linear-gradient(transparent, rgba(0,0,0,0.72) 60%);
+      }
+      .ts-eyebrow {
+        font-size: clamp(14px, 2.5vw, 20px);
+        color: #c9a227;
+        letter-spacing: 0.35em;
+        text-transform: uppercase;
+      }
+      .ts-title {
+        font-family: 'Libre Baskerville', Georgia, serif;
+        font-size: clamp(2.4rem, 8vw, 5rem);
+        font-weight: 700;
+        color: #f0e4c8;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        line-height: 1;
+        text-shadow: 0 0 40px rgba(201,162,39,0.5), 0 2px 0 #6a5010;
+      }
+      .ts-sub {
+        font-size: clamp(14px, 2.5vw, 22px);
+        color: rgba(200,180,150,0.75);
+        letter-spacing: 0.15em;
+        padding-bottom: 12px;
       }
 
-      /* Amiga-style horizontal menu strips */
-      .title-screen__menu {
-        padding: 0 16px 16px;
+      .ts-menu {
+        flex: 0 0 auto;
+        background: #000;
+        padding: 14px 24px 10px;
+      }
+      .ts-menu-items {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 2px;
+        margin-bottom: 10px;
       }
-      .title-screen__menu button {
-        cursor: pointer;
+      .ts-menu-items button {
         display: flex;
-        align-items: stretch;
-        width: 100%;
-        padding: 0;
+        align-items: baseline;
+        gap: 16px;
+        background: none;
         border: none;
-        background: transparent;
-        font: inherit;
+        cursor: pointer;
+        padding: 6px 0;
         text-align: left;
+        width: 100%;
+        border-bottom: 1px solid rgba(201,162,39,0.15);
       }
-      .title-screen__menu-key {
-        flex: 0 0 2.75rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font: 22px "VT323", monospace;
-        color: var(--chrome-gold);
-        background: linear-gradient(180deg, #1e2d3c 0%, #0f1820 100%);
-        border: 2px solid var(--chrome-steel);
-        border-right: none;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      .ts-menu-items button:last-child { border-bottom: none; }
+      .ts-key {
+        font-size: clamp(18px, 3vw, 26px);
+        color: #c9a227;
+        width: 2ch;
+        flex-shrink: 0;
       }
-      .title-screen__menu-body {
-        flex: 1;
-        padding: 12px 14px;
-        background: linear-gradient(180deg, #182433 0%, #0c1218 48%, #080c10 100%);
-        border: 2px solid var(--chrome-steel);
-        border-left: 1px solid #1a2838;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
-          inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+      .ts-label {
+        font-size: clamp(18px, 3vw, 26px);
+        color: #e8dcc4;
+        letter-spacing: 0.06em;
       }
-      .title-screen__menu-title {
-        display: block;
-        font: 22px "VT323", monospace;
-        color: var(--text-paper);
-        letter-spacing: 0.04em;
+      .ts-menu-items button:hover .ts-label,
+      .ts-menu-items button:focus-visible .ts-label { color: #fff; }
+      .ts-menu-items button:hover .ts-key,
+      .ts-menu-items button:focus-visible .ts-key { color: #ffe080; }
+      .ts-menu-items button:focus-visible { outline: none; }
+
+      .ts-ticker {
+        border-top: 1px solid rgba(201,162,39,0.3);
+        padding-top: 8px;
+        overflow: hidden;
+        white-space: nowrap;
       }
-      .title-screen__menu-desc {
-        display: block;
+      .ts-ticker-inner {
+        display: inline-block;
+        font-size: clamp(13px, 2vw, 18px);
+        color: #5a6a7a;
+        animation: ticker 32s linear infinite;
+        letter-spacing: 0.08em;
+      }
+      @keyframes ticker {
+        from { transform: translateX(100vw); }
+        to   { transform: translateX(-100%); }
+      }
+
+      /* ── BRIEFING SCREEN ────────────────────────────────────── */
+
+      #briefing {
+        background: #000;
+      }
+
+      .br-header {
+        flex: 0 0 auto;
+        padding: 12px 24px 10px;
+        background: #000;
+      }
+      .br-classify {
+        font-size: clamp(11px, 1.8vw, 15px);
+        color: #c9a227;
+        letter-spacing: 0.3em;
+        margin-bottom: 4px;
+      }
+      .br-title {
+        font-family: 'Libre Baskerville', Georgia, serif;
+        font-size: clamp(1.4rem, 4vw, 2.4rem);
+        font-weight: 700;
+        color: #f0e4c8;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        text-shadow: 0 0 24px rgba(201,162,39,0.4);
+        line-height: 1.1;
+      }
+      .br-sub {
+        font-size: clamp(13px, 2vw, 18px);
+        color: rgba(196,140,88,0.8);
+        letter-spacing: 0.2em;
         margin-top: 2px;
-        font: 18px "VT323", monospace;
-        color: var(--text-dim);
-      }
-      .title-screen__menu button:hover .title-screen__menu-body,
-      .title-screen__menu button:focus-visible .title-screen__menu-body {
-        border-color: var(--chrome-gold);
-        background: linear-gradient(180deg, #1c2c3c 0%, #101820 100%);
-      }
-      .title-screen__menu button:hover .title-screen__menu-key,
-      .title-screen__menu button:focus-visible .title-screen__menu-key {
-        border-color: var(--chrome-gold);
-      }
-      .title-screen__menu button:focus-visible {
-        outline: none;
-      }
-      .title-screen__menu button:focus-visible .title-screen__menu-body {
-        box-shadow: inset 0 0 0 2px rgba(201, 162, 39, 0.4);
       }
 
-      .title-screen__footer {
-        padding: 0 20px 14px;
-        text-align: center;
-        font: 18px "VT323", monospace;
-        color: rgba(92, 107, 120, 0.95);
-      }
-      .title-screen__footer kbd {
-        font: 17px "VT323", monospace;
-        padding: 1px 7px;
-        border: 1px solid var(--chrome-steel);
-        background: rgba(10, 14, 20, 0.9);
-        color: var(--text-dim);
+      .br-body {
+        flex: 1 1 auto;
+        overflow: auto;
+        padding: 12px 24px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px 28px;
       }
 
-      @media (prefers-reduced-motion: reduce) {
-        #intro.title-screen,
-        #hint {
-          transition: none;
-        }
+      .br-section h3 {
+        font-size: clamp(14px, 2.2vw, 20px);
+        color: #c9a227;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+        border-bottom: 1px solid rgba(201,162,39,0.25);
+        padding-bottom: 4px;
       }
+      .br-section p,
+      .br-section li {
+        font-size: clamp(14px, 2.2vw, 19px);
+        color: #c8baa0;
+        line-height: 1.5;
+        list-style: none;
+      }
+      .br-section li { padding: 1px 0; }
+      .br-section li.threat-head {
+        color: #e8c898;
+        margin-top: 6px;
+      }
+      .br-section li.threat-head::before {
+        content: '▸ ';
+        color: #d94a2a;
+      }
+      .br-section li.threat-stat {
+        color: #8b5a38;
+        padding-left: 14px;
+        font-size: clamp(12px, 1.9vw, 17px);
+      }
+      .br-section li.key-line { color: #e8c898; }
+      .br-section li.key-line .kbd {
+        display: inline-block;
+        color: #c9a227;
+        min-width: 7ch;
+      }
+
+      .br-footer {
+        flex: 0 0 auto;
+        padding: 10px 24px 12px;
+        background: #000;
+        display: flex;
+        gap: 20px;
+        align-items: center;
+      }
+      .br-footer button {
+        background: none;
+        border: 1px solid rgba(201,162,39,0.35);
+        cursor: pointer;
+        padding: 6px 18px;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+      }
+      .br-footer button:hover,
+      .br-footer button:focus-visible { border-color: #c9a227; outline: none; }
+      .br-footer button:hover .ts-label,
+      .br-footer button:focus-visible .ts-label { color: #fff; }
+      .br-footer button:hover .ts-key,
+      .br-footer button:focus-visible .ts-key { color: #ffe080; }
+      .br-footer .divider {
+        color: rgba(201,162,39,0.4);
+        font-size: clamp(18px, 3vw, 26px);
+      }
+
+      /* ── Hint bar ───────────────────────────────────────────── */
+      #hint {
+        position: fixed;
+        bottom: 8px; left: 10px;
+        z-index: 30;
+        font-size: 13px;
+        color: #3a4a5a;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+      }
+      #hint.is-visible { opacity: 1; }
     </style>
   </head>
   <body>
-    <!-- Game bootstrap: same ids wired from src/main.ts -->
-    <div id="intro" class="title-screen" aria-label="Title screen">
-      <div class="title-screen__crt" aria-hidden="true"></div>
-      <div class="title-screen__vignette" aria-hidden="true"></div>
 
-      <div class="title-screen__frame">
-        <header class="title-screen__header">
-          <p class="title-screen__eyebrow">Meridian · Ashar</p>
-          <h1 class="title-screen__logo">Hell Strait</h1>
-          <p class="title-screen__subtitle">A complete browser “mission disk”</p>
-          <p class="title-screen__strap">
-            Patrol the convoy · PAL 320×256 · 18-colour dither · procedural Amiga bleeps
-          </p>
-        </header>
+    <!-- ── TITLE SCREEN ───────────────────────────────────────── -->
+    <div id="intro" class="screen" aria-label="Hell Strait title screen">
 
-        <section
-          class="title-screen__art"
-          aria-label="Strait at sunset — temporary background art"
-        >
-          <div class="title-screen__art-inner" aria-hidden="true"></div>
-        </section>
+      <div class="ts-art" aria-hidden="true">
+        <div class="ts-art-inner">
+          <p class="ts-eyebrow">Meridian Command · Strait Operations</p>
+          <h1 class="ts-title">Hell Strait</h1>
+          <p class="ts-sub">100 oil tankers · 90 seconds · intercept all threats</p>
+        </div>
+      </div>
 
-        <nav class="title-screen__menu" aria-label="Main menu">
+      <div class="copper" aria-hidden="true"></div>
+
+      <nav class="ts-menu" aria-label="Game menu">
+        <div class="ts-menu-items">
           <button type="button" id="btn-deck" autofocus>
-            <span class="title-screen__menu-key">1</span>
-            <span class="title-screen__menu-body">
-              <span class="title-screen__menu-title">Start patrol</span>
-              <span class="title-screen__menu-desc"
-                >90s survival · score · hi-score · ballistics resupply — full mission</span
-              >
-            </span>
+            <span class="ts-key">1</span>
+            <span class="ts-label">PLAY</span>
           </button>
           <button type="button" id="btn-brief">
-            <span class="title-screen__menu-key">2</span>
-            <span class="title-screen__menu-body">
-              <span class="title-screen__menu-title">Ashar briefing</span>
-              <span class="title-screen__menu-desc"
-                >Cinemaware-style intertitle · second palette</span
-              >
-            </span>
+            <span class="ts-key">2</span>
+            <span class="ts-label">MISSION BRIEFING</span>
           </button>
-          <button type="button" id="btn-courtyard">
-            <span class="title-screen__menu-key">3</span>
-            <span class="title-screen__menu-body">
-              <span class="title-screen__menu-title">EGA courtyard (demo)</span>
-              <span class="title-screen__menu-desc"
-                >Three.js flat scene · 16-colour palette · ESC — command deck</span
-              >
-            </span>
+          <button type="button" id="btn-intercept">
+            <span class="ts-key">3</span>
+            <span class="ts-label">GULF SDI — CARRIER DEFENCE</span>
           </button>
-        </nav>
+        </div>
+        <div class="ts-ticker" aria-hidden="true">
+          <span class="ts-ticker-inner">
+            PRESS 1 TO PLAY &nbsp;·&nbsp;
+            3 — GULF SDI FROM CVN CARRIER &nbsp;·&nbsp;
+            DEFEND THE CONVOY FOR 90 SECONDS &nbsp;·&nbsp;
+            AIR DRONES ATTACK FROM ABOVE &nbsp;·&nbsp;
+            SURFACE BOATS KNIFE IN FROM THE FLANKS &nbsp;·&nbsp;
+            SPACE / CLICK — PATRIOT MISSILE, AUTO OR AIMED &nbsp;·&nbsp;
+            Z — CANNON BURST, UNLIMITED AMMO &nbsp;·&nbsp;
+            ESC TO RETURN TO MENU &nbsp;·&nbsp;
+          </span>
+        </div>
+      </nav>
 
-        <footer class="title-screen__footer">
-          <kbd>1</kbd> patrol · <kbd>2</kbd> brief · <kbd>3</kbd> EGA ·
-          <kbd>ESC</kbd> back ·
-          <a href="/gallery/" style="color: #4a90d9">Stability art</a>
-          · sound after first click · dev
-          <kbd>?raw</kbd> <kbd>?skipIntro</kbd> <kbd>?courtyard</kbd>
-        </footer>
+    </div>
+
+    <!-- ── MISSION BRIEFING ───────────────────────────────────── -->
+    <div id="briefing" class="screen" hidden aria-label="Mission briefing">
+
+      <div class="br-header">
+        <p class="br-classify">MERIDIAN COMMAND &nbsp;·&nbsp; STRAIT OPS &nbsp;·&nbsp; CLASSIFICATION: RESTRICTED</p>
+        <h2 class="br-title">Operation Meridian Gate</h2>
+        <p class="br-sub">PILOT BRIEFING &nbsp;·&nbsp; 0558 LOCAL &nbsp;·&nbsp; ASHAR SECTOR</p>
       </div>
+
+      <div class="copper" aria-hidden="true"></div>
+
+      <div class="br-body">
+
+        <div class="br-section">
+          <h3>Situation</h3>
+          <p>Ashar insurgent forces have interdicted the
+          Meridian Strait — the Coalition's primary fuel
+          corridor. Twelve laden tankers are staged at the
+          north anchorage awaiting transit.</p>
+          <br>
+          <p>A transit window opens at 0600 and holds for
+          ninety seconds before Ashar reinforcement drones
+          arrive in overwhelming force.</p>
+        </div>
+
+        <div class="br-section">
+          <h3>Threat Assessment</h3>
+          <ul>
+            <li class="threat-head">AIR THREAT — DRONE SWARM</li>
+            <li class="threat-stat">Fast vertical descent, erratic lateral drift</li>
+            <li class="threat-stat">Low mass — dangerous in numbers</li>
+            <li class="threat-stat">Damage: ×1 per convoy breach</li>
+            <li class="threat-head">SEA THREAT — FAST ATTACK CRAFT</li>
+            <li class="threat-stat">Knife in from port and starboard flanks</li>
+            <li class="threat-stat">Armoured hull, angled high-speed run</li>
+            <li class="threat-stat">Damage: ×4 per convoy breach</li>
+          </ul>
+        </div>
+
+        <div class="br-section">
+          <h3>Objective</h3>
+          <p>Intercept all inbound threats. Hold convoy
+          integrity for 90 seconds until the relief
+          squadron arrives on station.</p>
+          <br>
+          <p>Loadout: 16 Patriot missiles + unlimited cannon.
+          Patriot resupply drops every fourth wave.</p>
+        </div>
+
+        <div class="br-section">
+          <h3>Fire Control</h3>
+          <ul>
+            <li class="key-line"><span class="kbd">SPACE</span> Patriot — auto-targets nearest</li>
+            <li class="key-line"><span class="kbd">CLICK</span> Patriot — aimed at cursor</li>
+            <li class="key-line"><span class="kbd">Z</span> Cannon — fast burst, unlimited</li>
+            <li class="key-line"><span class="kbd">← →</span> manoeuvre</li>
+            <li class="key-line"><span class="kbd">W S</span> adjust depth band</li>
+            <li class="key-line"><span class="kbd">ESC</span> abort patrol / return</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="copper-thin" aria-hidden="true"></div>
+
+      <div class="br-footer">
+        <button type="button" id="brief-play">
+          <span class="ts-key">1</span>
+          <span class="ts-label">LAUNCH PATROL</span>
+        </button>
+        <span class="divider">·</span>
+        <button type="button" id="brief-back">
+          <span class="ts-key">ESC</span>
+          <span class="ts-label">STAND DOWN</span>
+        </button>
+      </div>
+
     </div>
 
     <div id="game-root" aria-label="Patrol game"></div>

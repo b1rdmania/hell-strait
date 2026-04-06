@@ -1,326 +1,763 @@
 import Phaser from "phaser";
 import * as RetroAudio from "../audio/retroAudio";
 
+// ---------------------------------------------------------------------------
+// Canvas dimensions
+// ---------------------------------------------------------------------------
 const W = 320;
 const H = 256;
-const TANKERS_START = 100;
-const BALLISTICS_START = 8;
-const BALLISTICS_MAX = 16;
-/** Gold line — enemies crossing this damage the convoy */
-const DEFENSE_LINE = 236;
-const FIRE_COOLDOWN_MS = 320;
-const MISSILE_SPEED = 480;
-const WIN_MS = 90_000;
-const HISCORE_KEY = "hell-strait-hiscore";
 
-const DEPTH_BG = 0;
-const DEPTH_STARS = 5;
-const DEPTH_CONVOY = 8;
-const DEPTH_THREAT = 50;
-const DEPTH_MISSILE = 80;
-const DEPTH_BANNER = 400;
-const DEPTH_HUD = 900;
+// ---------------------------------------------------------------------------
+// Sprite scales (source images are 1536×1536)
+// ---------------------------------------------------------------------------
+const SPRITE_SRC   = 1536;
+const SCALE_PLAYER = 32  / SPRITE_SRC;
+const SCALE_DRONE  = 26  / SPRITE_SRC;
+const SCALE_BOAT   = 30  / SPRITE_SRC;
+const SCALE_EXPL   = 48  / SPRITE_SRC;
+
+// ---------------------------------------------------------------------------
+// Background — 3 zone images, 30 s each
+// ---------------------------------------------------------------------------
+const BG_SRC_W  = 1152;
+const BG_SRC_H  = 2016;
+const BG_SCALE  = W / BG_SRC_W;
+const BG_DISP_H = Math.round(BG_SRC_H * BG_SCALE);
+const ZONE_KEYS = ["bg-zone1", "bg-zone2", "bg-zone3"] as const;
+const ZONE_MS   = 30_000;
+
+// ---------------------------------------------------------------------------
+// Game rules
+// ---------------------------------------------------------------------------
+const TANKERS_START     = 100;
+const PATRIOTS_START    = 8;
+const PATRIOTS_MAX      = 16;
+const PATRIOT_COOLDOWN  = 280;
+const PATRIOT_SPEED     = 400;
+const CANNON_COOLDOWN   = 85;
+const CANNON_SPEED      = 540;
+const WIN_MS            = 90_000;
+const BG_SCROLL_SPEED   = 40;
+const PLAYER_SPEED      = 170;
+const HISCORE_KEY       = "hell-strait-hiscore";
+
+const DEFENSE_LINE      = 236;
+const INVINCIBILITY_MS  = 800;
+const COMBO_WINDOW_MS   = 1500;
+
+// AA guns
+const AA_GUN_INTERVAL   = 2800;
+const AA_BULLET_SPEED   = 110;
+
+// Enemy fire
+const DRONE_FIRE_INTERVAL = 2200;
+const BOAT_FIRE_INTERVAL  = 1600;
+const ENEMY_BULLET_SPEED  = 95;
+
+// Depth layers
+const DEPTH_BG       = 0;
+const DEPTH_GROUND   = 4;
+const DEPTH_CONVOY   = 8;
+const DEPTH_THREAT   = 50;
+const DEPTH_MISSILE  = 80;
+const DEPTH_PLAYER   = 90;
+const DEPTH_EXPL     = 100;
+const DEPTH_VIGNETTE = 200;
+const DEPTH_BANNER   = 400;
+const DEPTH_HUD      = 900;
 const DEPTH_GAMEOVER = 950;
 
 type ThreatKind = "drone" | "boat";
+type FormationKind = "v_drones" | "pincer" | "line_drones";
 
-/**
- * Patrol — full strait defence: sprite-based threats, reliable Arcade physics, HUD on top.
- */
 export class PatrolScene extends Phaser.Scene {
-  private tankers = TANKERS_START;
-  private ballistics = BALLISTICS_START;
-  private wave = 0;
-  private survivedMs = 0;
-  private score = 0;
-  private hi = 0;
-  private gameOver = false;
-  private lastFire = 0;
-  private exited = false;
+  // ── State ─────────────────────────────────────────────────────────────────
+  private tankers       = TANKERS_START;
+  private patriots      = PATRIOTS_START;
+  private wave          = 0;
+  private survivedMs    = 0;
+  private score         = 0;
+  private hi            = 0;
+  private gameOver      = false;
+  private lastPatriot   = 0;
+  private lastCannon    = 0;
+  private exited        = false;
 
-  private hudTankers!: Phaser.GameObjects.Text;
-  private hudMissiles!: Phaser.GameObjects.Text;
-  private hudWave!: Phaser.GameObjects.Text;
-  private hudTime!: Phaser.GameObjects.Text;
-  private hudScore!: Phaser.GameObjects.Text;
-  private hudHi!: Phaser.GameObjects.Text;
-  private hudLegend!: Phaser.GameObjects.Text;
-  private hudHint!: Phaser.GameObjects.Text;
+  // Player
+  private playerX       = W / 2;
+  private playerY       = 200;
+  private playerAngle   = 0;
+  private playerHitTime = 0;
 
-  private enemies!: Phaser.Physics.Arcade.Group;
-  private shots!: Phaser.Physics.Arcade.Group;
+  // Combo
+  private comboCount    = 0;
+  private lastKillTime  = 0;
 
-  constructor() {
-    super({ key: "PatrolScene" });
+  // Zone surge
+  private surgeFired      = false;
+  private formationCounter = 0;
+
+  // Tanker ship tier
+  private tankerTier = 3;
+
+  // ── Background ────────────────────────────────────────────────────────────
+  private bgImg1!:     Phaser.GameObjects.Image;
+  private bgImg2!:     Phaser.GameObjects.Image;
+  private bgFade1!:    Phaser.GameObjects.Image;
+  private bgFade2!:    Phaser.GameObjects.Image;
+  private bgZone       = 0;
+  private bgFading     = false;
+  private bgFadeAlpha  = 0;
+
+  // ── Game objects ──────────────────────────────────────────────────────────
+  private player!:       Phaser.GameObjects.Image;
+  private tankerShips:   (Phaser.GameObjects.Image | null)[] = [null, null, null];
+  private vignette!:     Phaser.GameObjects.Graphics;
+  private waveTimer!:    Phaser.Time.TimerEvent;
+
+  // ── Input ─────────────────────────────────────────────────────────────────
+  private cursors!:  Phaser.Types.Input.Keyboard.CursorKeys;
+  private keyW!:     Phaser.Input.Keyboard.Key;
+  private keyA!:     Phaser.Input.Keyboard.Key;
+  private keyS!:     Phaser.Input.Keyboard.Key;
+  private keyD!:     Phaser.Input.Keyboard.Key;
+  private keyX!:     Phaser.Input.Keyboard.Key;
+
+  // ── HUD ───────────────────────────────────────────────────────────────────
+  private hudConvoyBar!:   Phaser.GameObjects.Graphics;
+  private hudTankerCount!: Phaser.GameObjects.Text;
+  private hudPatriots!:    Phaser.GameObjects.Text;
+  private hudWave!:        Phaser.GameObjects.Text;
+  private hudTime!:        Phaser.GameObjects.Text;
+  private hudScore!:       Phaser.GameObjects.Text;
+  private hudHi!:          Phaser.GameObjects.Text;
+
+  // ── Physics groups ────────────────────────────────────────────────────────
+  private enemies!:    Phaser.Physics.Arcade.Group;
+  private shots!:      Phaser.Physics.Arcade.Group;
+  private enemyShots!: Phaser.Physics.Arcade.Group;
+  private aaGuns!:     Phaser.Physics.Arcade.Group;
+  private aaShots!:    Phaser.Physics.Arcade.Group;
+  private nextAaSpawn  = 0;
+
+  // ==========================================================================
+  constructor() { super({ key: "PatrolScene" }); }
+
+  // ==========================================================================
+  // Lifecycle
+  // ==========================================================================
+
+  preload(): void {
+    this.load.image("bg-zone1",     "/generated/bg-zone1.png");
+    this.load.image("bg-zone2",     "/generated/bg-zone2.png");
+    this.load.image("bg-zone3",     "/generated/bg-zone3.png");
+    this.load.image("player-craft", "/generated/player-craft.png");
+    this.load.image("enemy-drone",  "/generated/enemy-drone.png");
+    this.load.image("enemy-boat",   "/generated/enemy-boat.png");
+    this.load.image("explosion",    "/generated/explosion.png");
   }
 
   create(): void {
     RetroAudio.unlockAudio();
-
     try {
       const raw = localStorage.getItem(HISCORE_KEY);
       this.hi = raw ? Math.max(0, parseInt(raw, 10) || 0) : 0;
-    } catch {
-      this.hi = 0;
-    }
+    } catch { this.hi = 0; }
 
-    this.ensureTextures();
-    this.drawWorld();
+    this.generateTextures();
+    this.buildBackground();
+    this.buildWorld();
+    this.buildPlayer();
+    this.buildInput();
+    this.buildPhysicsGroups();
+    this.buildHud();
+    this.startWaves();
+    this.showBanner("HELL STRAIT", "INTERCEPT ALL THREATS");
+  }
 
-    this.enemies = this.physics.add.group({ runChildUpdate: false });
-    this.shots = this.physics.add.group({ runChildUpdate: false });
+  update(_t: number, delta: number): void {
+    if (this.gameOver) return;
 
-    const textStyle: Phaser.Types.GameObjects.Text.TextStyle = {
-      fontFamily: "VT323, monospace",
-      fontSize: "17px",
-      color: "#e8eef2",
-    };
+    this.scrollBackground(delta);
+    this.movePlayer(delta);
+    this.survivedMs += delta;
 
-    const z = DEPTH_HUD;
-    this.hudTankers = this.add.text(8, 4, "", textStyle).setDepth(z);
-    this.hudMissiles = this.add.text(8, 22, "", textStyle).setDepth(z);
-    this.hudWave = this.add.text(W - 8, 4, "", textStyle).setOrigin(1, 0).setDepth(z);
-    this.hudTime = this.add.text(W / 2, 4, "", textStyle).setOrigin(0.5, 0).setDepth(z);
-    this.hudScore = this.add
-      .text(8, 40, "", { ...textStyle, fontSize: "16px", color: "#c9a227" })
-      .setDepth(z);
-    this.hudHi = this.add
-      .text(W - 8, 40, "", { ...textStyle, fontSize: "16px", color: "#8a9ba8" })
-      .setOrigin(1, 0)
-      .setDepth(z);
+    // Cannon auto-fires while SPACE held
+    if (this.cursors.space.isDown) this.fireCannon();
 
-    this.hudLegend = this.add
-      .text(W / 2, 62, "", {
-        fontFamily: "VT323, monospace",
-        fontSize: "14px",
-        color: "#8a9ba8",
-      })
-      .setOrigin(0.5, 0)
-      .setDepth(z);
+    this.tickEnemies(delta);
+    this.tickEnemyShots();
+    this.tickAaGuns(delta);
+    this.cullShots();
+    this.checkTankerThresholds();
+    this.checkZoneSurge();
+    this.updateVignette();
 
-    this.hudHint = this.add
-      .text(W / 2, H - 10, "", {
-        fontFamily: "VT323, monospace",
-        fontSize: "14px",
-        color: "#6a7a88",
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(z);
-
-    this.physics.add.overlap(
-      this.shots,
-      this.enemies,
-      (shotObj, enemyObj) => {
-        const shot = shotObj as Phaser.Physics.Arcade.Sprite;
-        const enemy = enemyObj as Phaser.Physics.Arcade.Sprite;
-        const kind = enemy.getData("kind") as ThreatKind | undefined;
-        shot.destroy();
-        enemy.destroy();
-        this.score += kind === "boat" ? 40 : 15;
-        RetroAudio.playHit();
-        this.cameras.main.flash(65, 18, 38, 52, false);
-        this.updateHud();
-      },
-      undefined,
-      this,
-    );
-
-    this.input.on("pointerdown", this.tryFire, this);
-    this.input.keyboard?.on("keydown-ESC", () => this.quitToTitle());
-
-    const banner = this.add
-      .text(W / 2, H / 2 - 36, "HELL STRAIT", {
-        fontFamily: "Libre Baskerville, Georgia, serif",
-        fontSize: "26px",
-        color: "#e8dcc4",
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH_BANNER);
-    const sub = this.add
-      .text(W / 2, H / 2 - 4, "AIR & SURFACE THREATS — INTERCEPT", {
-        fontFamily: "VT323, monospace",
-        fontSize: "18px",
-        color: "#c9a227",
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH_BANNER);
-
-    this.tweens.add({
-      targets: [banner, sub],
-      alpha: 0,
-      delay: 1600,
-      duration: 700,
-      onComplete: () => {
-        banner.destroy();
-        sub.destroy();
-      },
-    });
-
-    // Early spawns so threats are visible immediately
-    this.time.delayedCall(400, () => {
-      this.spawnPairDemo();
-    });
-
-    this.time.delayedCall(1200, () => {
-      RetroAudio.playAlert();
-      this.spawnWaveTick();
-      this.time.addEvent({
-        delay: 2600,
-        callback: () => this.spawnWaveTick(),
-        callbackScope: this,
-        loop: true,
-      });
-    });
-
-    this.hudLegend.setText("▲ ORANGE = air drone   ■ BROWN = boat drone   (cross gold line = −1 tanker)");
-    this.hudHint.setText("CLICK / TAP to fire ballistics   ·   ESC — debrief");
+    if (this.survivedMs >= WIN_MS) this.endGame(true);
     this.updateHud();
   }
 
-  /** Pixel-art style textures — one atlas for predictable physics bounds */
-  private ensureTextures(): void {
-    const t = this.textures;
-    if (t.exists("hs_drone")) return;
+  // ==========================================================================
+  // Setup
+  // ==========================================================================
 
-    const off = () => {
-      const g = this.add.graphics();
-      g.setPosition(-2000, -2000);
-      return g;
-    };
+  private generateTextures(): void {
+    // Patriot missile — gold teardrop
+    const g = this.add.graphics();
+    g.fillStyle(0xffe050); g.fillRect(0, 0, 3, 9);
+    g.fillStyle(0xff9800); g.fillRect(0, 7, 3, 2);
+    g.generateTexture("patriot", 3, 9); g.destroy();
 
-    let g = off();
-    g.fillStyle(0xff3d1f, 1);
-    g.fillTriangle(9, 2, 16, 16, 2, 16);
-    g.lineStyle(2, 0xffffff, 1);
-    g.strokeTriangle(9, 2, 16, 16, 2, 16);
-    g.fillStyle(0xffaa66, 1);
-    g.fillCircle(9, 12, 2);
-    g.generateTexture("hs_drone", 18, 18);
-    g.destroy();
+    // Cannon round — white dart
+    const g2 = this.add.graphics();
+    g2.fillStyle(0xffffff); g2.fillRect(0, 0, 2, 5);
+    g2.generateTexture("cannon-round", 2, 5); g2.destroy();
 
-    g = off();
-    g.fillStyle(0x1a1510, 1);
-    g.fillRoundedRect(0, 6, 36, 14, 3);
-    g.fillStyle(0x8b5a2b, 1);
-    g.fillRoundedRect(2, 8, 32, 10, 2);
-    g.lineStyle(2, 0xffcc88, 1);
-    g.strokeRoundedRect(2, 8, 32, 10, 2);
-    g.fillStyle(0x4a90d9, 0.75);
-    g.fillEllipse(18, 20, 14, 5);
-    g.fillStyle(0x2a2018, 1);
-    g.fillRect(14, 4, 8, 6);
-    g.generateTexture("hs_boat", 38, 26);
-    g.destroy();
+    // Enemy bullet — orange
+    const eb = this.add.graphics();
+    eb.fillStyle(0xff5500); eb.fillRect(0, 0, 3, 6);
+    eb.generateTexture("enemy-bullet", 3, 6); eb.destroy();
 
-    g = off();
-    g.fillStyle(0xffe066, 1);
-    g.fillRect(0, 0, 4, 14);
-    g.fillStyle(0xfff5cc, 1);
-    g.fillRect(0, 0, 4, 4);
-    g.generateTexture("hs_missile", 4, 14);
-    g.destroy();
+    // AA gun
+    const ag = this.add.graphics();
+    ag.fillStyle(0x1a2a1a); ag.fillRect(0, 0, 7, 7);
+    ag.fillStyle(0x4a6a3a); ag.fillRect(1, 1, 5, 5);
+    ag.fillStyle(0xd94a2a); ag.fillRect(3, 0, 1, 4);
+    ag.generateTexture("aa-gun", 7, 7); ag.destroy();
+
+    // AA bullet
+    const ab = this.add.graphics();
+    ab.fillStyle(0xff4400); ab.fillRect(0, 0, 2, 4);
+    ab.generateTexture("aa-bullet", 2, 4); ab.destroy();
+
+    // Tanker ship (38×10)
+    const tg = this.add.graphics();
+    tg.fillStyle(0x1e3350); tg.fillRect(0, 4, 38, 6);        // hull
+    tg.fillStyle(0x3a5870); tg.fillRect(5, 1, 16, 4);         // superstructure
+    tg.fillStyle(0xc9a227); tg.fillRect(4, 3, 2, 2);          // port light
+    tg.fillStyle(0xc9a227); tg.fillRect(32, 3, 2, 2);         // starboard light
+    tg.fillStyle(0x555566); tg.fillRect(15, 0, 3, 3);         // funnel
+    tg.generateTexture("tanker-ship", 38, 10); tg.destroy();
   }
 
-  private drawWorld(): void {
-    const g = this.add.graphics().setDepth(DEPTH_BG);
-    g.fillGradientStyle(0x1a2840, 0x1a2840, 0x0a1520, 0x0a1520, 1);
-    g.fillRect(0, 0, W, 118);
-    g.fillGradientStyle(0x0d1520, 0x0d1520, 0x050a12, 0x050a12, 1);
-    g.fillRect(0, 118, W, 92);
-    g.fillStyle(0x050a12, 1);
-    g.fillRect(0, 200, W, 56);
+  private buildBackground(): void {
+    const key = ZONE_KEYS[0];
+    this.bgImg1  = this.add.image(W / 2, BG_DISP_H / 2, key).setScale(BG_SCALE).setDepth(DEPTH_BG);
+    this.bgImg2  = this.add.image(W / 2, BG_DISP_H / 2 - BG_DISP_H, key).setScale(BG_SCALE).setDepth(DEPTH_BG);
+    this.bgFade1 = this.add.image(W / 2, BG_DISP_H / 2, key).setScale(BG_SCALE).setDepth(DEPTH_BG + 1).setAlpha(0);
+    this.bgFade2 = this.add.image(W / 2, BG_DISP_H / 2 - BG_DISP_H, key).setScale(BG_SCALE).setDepth(DEPTH_BG + 1).setAlpha(0);
+  }
 
-    this.add
-      .line(0, DEFENSE_LINE, 0, 0, W, 0, 0xffd040, 1)
-      .setOrigin(0, 0.5)
-      .setLineWidth(3)
-      .setDepth(DEPTH_BG + 1);
+  private buildWorld(): void {
+    // Subtle convoy line
+    this.add.line(0, DEFENSE_LINE, 0, 0, W, 0, 0xffd040, 0.4)
+      .setOrigin(0, 0.5).setLineWidth(1).setDepth(DEPTH_BG + 2);
 
-    this.add
-      .text(W / 2, DEFENSE_LINE - 10, "— CONVOY —", {
-        fontFamily: "VT323, monospace",
-        fontSize: "12px",
-        color: "#c9a227",
-      })
-      .setOrigin(0.5, 1)
-      .setAlpha(0.85)
-      .setDepth(DEPTH_BG + 1);
-
-    this.add.rectangle(W / 2, 222, W, 38, 0x0c1520).setAlpha(0.92).setDepth(DEPTH_BG + 1);
-
-    for (let i = 0; i < 40; i++) {
-      const x = Phaser.Math.Between(4, W - 4);
-      const y = Phaser.Math.Between(4, 108);
-      const s = Phaser.Math.Between(1, 2);
-      this.add
-        .rectangle(x, y, s, s, 0xffffff)
-        .setAlpha(Phaser.Math.FloatBetween(0.12, 0.5))
-        .setDepth(DEPTH_STARS);
-    }
-
-    const convoyY = 232;
-    const slots = [-108, -76, -44, -12, 20, 52, 84, 106];
-    for (const ox of slots) {
-      const hull = this.add.rectangle(W / 2 + ox, convoyY, 24, 7, 0x2a3f54).setDepth(DEPTH_CONVOY);
-      hull.setStrokeStyle(1, 0xc9a227, 0.45);
-      this.add
-        .rectangle(W / 2 + ox, convoyY - 4, 7, 4, 0x8a9ba8)
-        .setAlpha(0.92)
+    // Three tanker ships visible at the convoy line
+    const positions = [64, 160, 256];
+    for (let i = 0; i < 3; i++) {
+      const ship = this.add.image(positions[i], DEFENSE_LINE + 10, "tanker-ship")
         .setDepth(DEPTH_CONVOY);
+      this.tankerShips[i] = ship;
     }
   }
 
-  /** Guaranteed one of each type so the player always sees both silhouettes */
-  private spawnPairDemo(): void {
-    if (this.gameOver) return;
-    this.spawnThreat("drone", Phaser.Math.Between(40, 120));
-    this.spawnThreat("boat", Phaser.Math.Between(200, 280));
+  private buildPlayer(): void {
+    this.player = this.add
+      .image(this.playerX, this.playerY, "player-craft")
+      .setScale(SCALE_PLAYER)
+      .setDepth(DEPTH_PLAYER);
   }
 
-  update(_time: number, delta: number): void {
-    if (this.gameOver) return;
+  private buildInput(): void {
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    const kb = this.input.keyboard!;
+    this.keyW = kb.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+    this.keyA = kb.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+    this.keyS = kb.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+    this.keyD = kb.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+    this.keyX = kb.addKey(Phaser.Input.Keyboard.KeyCodes.X);
 
-    this.survivedMs += delta;
+    // X key = Patriot auto-target
+    kb.on("keydown-X", () => { if (!this.gameOver) this.firePatriot(null); });
 
+    // Click = Patriot aimed at cursor
+    this.input.on("pointerdown", (p: Phaser.Input.Pointer) => {
+      if (!this.gameOver) this.firePatriot(p);
+    });
+
+    this.input.keyboard?.on("keydown-ESC", () => this.quitToTitle());
+  }
+
+  private buildPhysicsGroups(): void {
+    this.enemies    = this.physics.add.group();
+    this.shots      = this.physics.add.group();
+    this.enemyShots = this.physics.add.group();
+    this.aaGuns     = this.physics.add.group();
+    this.aaShots    = this.physics.add.group();
+
+    // Player shots → enemies
+    this.physics.add.overlap(this.shots, this.enemies, (sObj, eObj) => {
+      const shot  = sObj as Phaser.Physics.Arcade.Sprite;
+      const enemy = eObj as Phaser.Physics.Arcade.Sprite;
+      shot.destroy();
+      this.killEnemy(enemy);
+    }, undefined, this);
+
+    // Player shots → AA guns
+    this.physics.add.overlap(this.shots, this.aaGuns, (sObj, gObj) => {
+      (sObj as Phaser.Physics.Arcade.Sprite).destroy();
+      const gun = gObj as Phaser.Physics.Arcade.Sprite;
+      this.explode(gun.x, gun.y);
+      gun.destroy();
+      this.scoreKill("aa", gun.x, gun.y);
+    }, undefined, this);
+  }
+
+  private buildHud(): void {
+    const ts: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: "VT323, monospace", fontSize: "16px", color: "#e8eef2",
+    };
+    const z = DEPTH_HUD;
+
+    // Top strip
+    this.add.rectangle(W / 2, 14, W, 28, 0x000000, 0.55).setDepth(z - 1);
+
+    this.hudTime  = this.add.text(W / 2, 3, "", ts).setOrigin(0.5, 0).setDepth(z);
+    this.hudWave  = this.add.text(W - 6, 3, "", { ...ts, color: "#8a9ba8" }).setOrigin(1, 0).setDepth(z);
+    this.hudScore = this.add.text(6, 3, "", { ...ts, color: "#c9a227" }).setDepth(z);
+    this.hudPatriots = this.add.text(6, 19, "", { ...ts, fontSize: "13px" }).setDepth(z);
+    this.hudHi    = this.add.text(W / 2, 19, "", { ...ts, fontSize: "13px", color: "#3a5060" })
+      .setOrigin(0.5, 0).setDepth(z);
+    this.add.text(W - 6, 19, "SPACE cannon · X/click patriot · ESC quit", {
+      fontFamily: "VT323, monospace", fontSize: "10px", color: "#2a3a4a",
+    }).setOrigin(1, 0).setDepth(z);
+
+    // Tanker bar
+    const BX = 6, BY = H / 2 + 20, BH = 100;
+    this.add.rectangle(BX, BY, 8, BH, 0x111820).setDepth(z - 1);
+    this.add.rectangle(BX, BY, 8, BH, 0x000000, 0).setStrokeStyle(1, 0x3d5468).setDepth(z - 1);
+    this.add.text(BX, BY + 52, "TANKERS LEFT", {
+      fontFamily: "VT323, monospace", fontSize: "10px", color: "#3d5468",
+    }).setOrigin(0.5, 0).setAngle(-90).setDepth(z);
+    this.hudTankerCount = this.add.text(BX, BY - BH / 2 - 14, "", {
+      fontFamily: "VT323, monospace", fontSize: "13px", color: "#8a9ba8",
+    }).setOrigin(0.5, 0).setDepth(z);
+    this.hudConvoyBar = this.add.graphics().setDepth(z);
+
+    // Vignette (critical health)
+    this.vignette = this.add.graphics().setDepth(DEPTH_VIGNETTE);
+
+    this.updateHud();
+  }
+
+  private startWaves(): void {
+    this.time.delayedCall(1400, () => {
+      this.spawnThreat("drone", Phaser.Math.Between(60, W - 60), "top");
+    });
+    this.time.delayedCall(3200, () => {
+      RetroAudio.playAlert();
+      this.spawnWave();
+      this.waveTimer = this.time.addEvent({
+        delay: 4000, callback: this.spawnWave, callbackScope: this, loop: true,
+      });
+    });
+  }
+
+  private showBanner(head: string, sub: string, color = "#e8dcc4"): void {
+    const b = this.add.text(W / 2, H / 2 - 36, head, {
+      fontFamily: "Libre Baskerville, Georgia, serif",
+      fontSize: "26px", color,
+    }).setOrigin(0.5).setDepth(DEPTH_BANNER);
+    const s = this.add.text(W / 2, H / 2 - 4, sub, {
+      fontFamily: "VT323, monospace", fontSize: "17px", color: "#c9a227",
+    }).setOrigin(0.5).setDepth(DEPTH_BANNER);
+    this.tweens.add({
+      targets: [b, s], alpha: 0, delay: 2000, duration: 700,
+      onComplete: () => { b.destroy(); s.destroy(); },
+    });
+  }
+
+  // ==========================================================================
+  // Per-frame
+  // ==========================================================================
+
+  private scrollBackground(delta: number): void {
+    const dy = BG_SCROLL_SPEED * (delta / 1000);
+    const half = BG_DISP_H / 2;
+    for (const img of [this.bgImg1, this.bgImg2, this.bgFade1, this.bgFade2]) img.y += dy;
+    if (this.bgImg1.y - half > H) {
+      this.bgImg1.y  = this.bgImg2.y  - BG_DISP_H;
+      this.bgFade1.y = this.bgFade2.y - BG_DISP_H;
+    }
+    if (this.bgImg2.y - half > H) {
+      this.bgImg2.y  = this.bgImg1.y  - BG_DISP_H;
+      this.bgFade2.y = this.bgImg1.y  - BG_DISP_H;
+    }
+    const targetZone = Math.min(ZONE_KEYS.length - 1, Math.floor(this.survivedMs / ZONE_MS));
+    if (targetZone > this.bgZone && !this.bgFading) {
+      this.bgFading = true; this.bgFadeAlpha = 0;
+      const nk = ZONE_KEYS[targetZone];
+      this.bgFade1.setTexture(nk).setAlpha(0);
+      this.bgFade2.setTexture(nk).setAlpha(0);
+    }
+    if (this.bgFading) {
+      this.bgFadeAlpha = Math.min(1, this.bgFadeAlpha + delta / 2000);
+      this.bgFade1.setAlpha(this.bgFadeAlpha);
+      this.bgFade2.setAlpha(this.bgFadeAlpha);
+      if (this.bgFadeAlpha >= 1) {
+        this.bgZone = targetZone; this.bgFading = false;
+        const key = ZONE_KEYS[this.bgZone];
+        this.bgImg1.setTexture(key); this.bgImg2.setTexture(key);
+        this.bgFade1.setAlpha(0);   this.bgFade2.setAlpha(0);
+      }
+    }
+  }
+
+  private movePlayer(delta: number): void {
+    const spd = PLAYER_SPEED * (delta / 1000);
+    const leftHeld  = this.cursors.left.isDown  || this.keyA.isDown;
+    const rightHeld = this.cursors.right.isDown || this.keyD.isDown;
+    const upHeld    = this.cursors.up.isDown    || this.keyW.isDown;
+    const downHeld  = this.cursors.down.isDown  || this.keyS.isDown;
+
+    if (leftHeld)  this.playerX -= spd;
+    if (rightHeld) this.playerX += spd;
+    if (upHeld)    this.playerY -= spd * 0.7;
+    if (downHeld)  this.playerY += spd * 0.7;
+
+    this.playerX = Phaser.Math.Clamp(this.playerX, 18, W - 18);
+    this.playerY = Phaser.Math.Clamp(this.playerY, 38, H - 16);
+
+    // Tilt toward movement direction
+    const targetAngle = leftHeld ? -14 : rightHeld ? 14 : 0;
+    this.playerAngle  = Phaser.Math.Linear(this.playerAngle, targetAngle, 0.14);
+
+    this.player.x = this.playerX;
+    this.player.y = this.playerY;
+    this.player.setAngle(this.playerAngle);
+
+    // Flash during invincibility
+    if (this.playerHitTime > 0) {
+      const elapsed = this.time.now - this.playerHitTime;
+      if (elapsed < INVINCIBILITY_MS) {
+        this.player.alpha = Math.sin(elapsed / 60) > 0 ? 1 : 0.25;
+      } else {
+        this.player.alpha = 1;
+        this.playerHitTime = 0;
+      }
+    }
+  }
+
+  private tickEnemies(delta: number): void {
+    const now = this.time.now;
     this.enemies.getChildren().forEach((obj) => {
       const e = obj as Phaser.Physics.Arcade.Sprite;
       if (!e.active) return;
+
+      // Drone sine-wave drift
+      if (e.getData("kind") === "drone") {
+        const phase = (e.getData("phase") as number) + delta * 0.003;
+        e.setData("phase", phase);
+        const amp = e.getData("amp") as number;
+        const b = e.body as Phaser.Physics.Arcade.Body;
+        b.setVelocityX(Math.sin(phase) * amp);
+        e.setRotation(Math.atan2(b.velocity.y, b.velocity.x) + Math.PI / 2);
+      }
+
+      // Enemy fires back
+      const nextFire = e.getData("nextFire") as number;
+      if (now >= nextFire) {
+        const kind  = e.getData("kind") as ThreatKind;
+        const delay = kind === "drone" ? DRONE_FIRE_INTERVAL : BOAT_FIRE_INTERVAL;
+        e.setData("nextFire", now + delay + Phaser.Math.Between(-300, 300));
+        this.fireEnemyShot(e.x, e.y, kind);
+      }
+
+      // Reached convoy
       if (e.y > DEFENSE_LINE) {
-        this.tankers = Math.max(0, this.tankers - 1);
-        e.destroy();
+        const dmg = (e.getData("kind") as ThreatKind) === "boat" ? 4 : 1;
+        this.tankers = Math.max(0, this.tankers - dmg);
+        this.spawnFloater(e.x, DEFENSE_LINE - 10, `-${dmg}`, "#ff4444");
+        this.cameras.main.shake(120, 0.006);
         RetroAudio.playDamage();
-        this.cameras.main.shake(130, 0.006);
+        e.destroy();
         this.updateHud();
         if (this.tankers <= 0) this.endGame(false);
-        return;
+      } else if (e.y < -80 || e.x < -80 || e.x > W + 80) {
+        e.destroy();
       }
-      if (e.y < -40 || e.x < -40 || e.x > W + 40) e.destroy();
     });
+  }
 
-    this.shots.getChildren().forEach((obj) => {
+  private tickEnemyShots(): void {
+    if (this.playerHitTime > 0) {
+      // Still invincible — cull shots near player silently
+      this.enemyShots.getChildren().forEach((obj) => {
+        const b = obj as Phaser.Physics.Arcade.Sprite;
+        if (Phaser.Math.Distance.Between(b.x, b.y, this.playerX, this.playerY) < 10) b.destroy();
+      });
+      return;
+    }
+    this.enemyShots.getChildren().forEach((obj) => {
+      const b = obj as Phaser.Physics.Arcade.Sprite;
+      if (!b.active) return;
+      if (Phaser.Math.Distance.Between(b.x, b.y, this.playerX, this.playerY) < 9) {
+        b.destroy();
+        this.playerHitTime = this.time.now;
+        this.tankers = Math.max(0, this.tankers - 2);
+        this.spawnFloater(this.playerX, this.playerY - 14, "-2", "#ff4444");
+        this.cameras.main.shake(100, 0.005);
+        RetroAudio.playDamage();
+        this.updateHud();
+        if (this.tankers <= 0) this.endGame(false);
+      }
+    });
+  }
+
+  private tickAaGuns(delta: number): void {
+    const now = this.time.now;
+    if (now > this.nextAaSpawn) {
+      this.nextAaSpawn = now + Phaser.Math.Between(2800, 4200);
+      const side = Math.random() < 0.5 ? "left" : "right";
+      const gx   = side === "left" ? Phaser.Math.Between(4, 18) : Phaser.Math.Between(W - 18, W - 4);
+      const gun  = this.aaGuns.create(gx, -10, "aa-gun") as Phaser.Physics.Arcade.Sprite;
+      gun.setDepth(DEPTH_GROUND);
+      gun.setData("nextFire", now + 1200);
+      (gun.body as Phaser.Physics.Arcade.Body).setVelocityY(BG_SCROLL_SPEED);
+    }
+    this.aaGuns.getChildren().forEach((obj) => {
+      const gun = obj as Phaser.Physics.Arcade.Sprite;
+      if (!gun.active) return;
+      if (gun.y > H + 20) { gun.destroy(); return; }
+      const nextFire = gun.getData("nextFire") as number;
+      if (now >= nextFire) {
+        gun.setData("nextFire", now + AA_GUN_INTERVAL);
+        const angle  = Phaser.Math.Angle.Between(gun.x, gun.y, this.playerX, this.playerY);
+        const bullet = this.aaShots.create(gun.x, gun.y - 4, "aa-bullet") as Phaser.Physics.Arcade.Sprite;
+        bullet.setDepth(DEPTH_MISSILE - 1);
+        (bullet.body as Phaser.Physics.Arcade.Body).setVelocity(
+          Math.cos(angle) * AA_BULLET_SPEED, Math.sin(angle) * AA_BULLET_SPEED,
+        );
+      }
+    });
+    // AA bullets hit player
+    if (this.playerHitTime <= 0) {
+      this.aaShots.getChildren().forEach((obj) => {
+        const b = obj as Phaser.Physics.Arcade.Sprite;
+        if (!b.active) return;
+        if (Phaser.Math.Distance.Between(b.x, b.y, this.playerX, this.playerY) < 9) {
+          b.destroy();
+          this.playerHitTime = this.time.now;
+          this.tankers = Math.max(0, this.tankers - 2);
+          this.spawnFloater(this.playerX, this.playerY - 14, "-2", "#ff4444");
+          this.cameras.main.shake(100, 0.005);
+          RetroAudio.playDamage();
+          this.updateHud();
+          if (this.tankers <= 0) this.endGame(false);
+        }
+      });
+    }
+  }
+
+  private cullShots(): void {
+    [...this.shots.getChildren(), ...this.enemyShots.getChildren(),
+      ...this.aaShots.getChildren()].forEach((obj) => {
       const s = obj as Phaser.Physics.Arcade.Sprite;
-      if (s.y < -16 || s.y > H + 16 || s.x < -16 || s.x > W + 16) s.destroy();
+      if (s.y < -30 || s.y > H + 30 || s.x < -30 || s.x > W + 30) s.destroy();
     });
+  }
 
-    if (!this.gameOver && this.tankers > 0 && this.survivedMs >= WIN_MS) {
-      this.endGame(true);
+  private checkTankerThresholds(): void {
+    const expectedTier = this.tankers > 66 ? 3 : this.tankers > 33 ? 2 : this.tankers > 0 ? 1 : 0;
+    while (this.tankerTier > expectedTier) {
+      this.tankerTier--;
+      const ship = this.tankerShips[this.tankerTier];
+      if (ship) {
+        this.explode(ship.x, ship.y);
+        this.cameras.main.flash(200, 200, 20, 20);
+        this.tweens.add({
+          targets: ship, alpha: 0, duration: 500,
+          onComplete: () => { ship.destroy(); this.tankerShips[this.tankerTier] = null; },
+        });
+      }
+    }
+  }
+
+  private checkZoneSurge(): void {
+    if (this.survivedMs >= 60_000 && !this.surgeFired) {
+      this.surgeFired = true;
+      this.waveTimer.remove();
+      this.waveTimer = this.time.addEvent({
+        delay: 2200, callback: this.spawnWave, callbackScope: this, loop: true,
+      });
+      this.showBanner("FINAL APPROACH", "ALL UNITS INBOUND", "#d94a2a");
+      RetroAudio.playAlert();
+    }
+  }
+
+  private updateVignette(): void {
+    const pct = this.tankers / TANKERS_START;
+    this.vignette.clear();
+    if (pct <= 0.20) {
+      const intensity = (1 - pct / 0.20) * 0.35 * (0.5 + 0.5 * Math.sin(this.survivedMs / 140));
+      if (intensity > 0.01) {
+        this.vignette.fillStyle(0xff0000, intensity);
+        this.vignette.fillRect(0, 0, 18, H);
+        this.vignette.fillRect(W - 18, 0, 18, H);
+        this.vignette.fillRect(0, 0, W, 14);
+        this.vignette.fillRect(0, H - 14, W, 14);
+      }
+    }
+  }
+
+  // ==========================================================================
+  // Actions
+  // ==========================================================================
+
+  private firePatriot(pointer: Phaser.Input.Pointer | null): void {
+    if (this.gameOver) return;
+    const now = this.time.now;
+    if (now - this.lastPatriot < PATRIOT_COOLDOWN) return;
+    if (this.patriots <= 0) return;
+
+    this.patriots -= 1;
+    this.lastPatriot = now;
+    RetroAudio.playFire();
+
+    const px = this.playerX, py = this.playerY - 10;
+    let vx = 0, vy = -PATRIOT_SPEED;
+
+    if (pointer) {
+      const a = Phaser.Math.Angle.Between(px, py, pointer.x, pointer.y);
+      vx = Math.cos(a) * PATRIOT_SPEED; vy = Math.sin(a) * PATRIOT_SPEED;
+    } else {
+      let minDist = Infinity;
+      this.enemies.getChildren().forEach((obj) => {
+        const e = obj as Phaser.Physics.Arcade.Sprite;
+        if (!e.active) return;
+        const d = Phaser.Math.Distance.Between(px, py, e.x, e.y);
+        if (d < minDist) {
+          minDist = d;
+          const a = Phaser.Math.Angle.Between(px, py, e.x, e.y);
+          vx = Math.cos(a) * PATRIOT_SPEED; vy = Math.sin(a) * PATRIOT_SPEED;
+        }
+      });
     }
 
+    const shot = this.shots.create(px, py, "patriot") as Phaser.Physics.Arcade.Sprite;
+    shot.setDepth(DEPTH_MISSILE);
+    shot.setRotation(Math.atan2(vy, vx) + Math.PI / 2);
+    (shot.body as Phaser.Physics.Arcade.Body).setVelocity(vx, vy);
     this.updateHud();
   }
 
-  private spawnWaveTick(): void {
+  private fireCannon(): void {
+    if (this.gameOver) return;
+    const now = this.time.now;
+    if (now - this.lastCannon < CANNON_COOLDOWN) return;
+    this.lastCannon = now;
+    for (const ox of [-3, 3]) {
+      const r = this.shots.create(this.playerX + ox, this.playerY - 8, "cannon-round") as Phaser.Physics.Arcade.Sprite;
+      r.setDepth(DEPTH_MISSILE);
+      (r.body as Phaser.Physics.Arcade.Body).setVelocity(ox * 10, -CANNON_SPEED);
+    }
+  }
+
+  private fireEnemyShot(x: number, y: number, kind: ThreatKind): void {
+    const speed = ENEMY_BULLET_SPEED;
+    let vx = 0, vy = speed;
+    if (kind === "boat") {
+      // Boats aim at player
+      const a = Phaser.Math.Angle.Between(x, y, this.playerX, this.playerY);
+      vx = Math.cos(a) * speed; vy = Math.sin(a) * speed;
+    }
+    const b = this.enemyShots.create(x, y, "enemy-bullet") as Phaser.Physics.Arcade.Sprite;
+    b.setDepth(DEPTH_MISSILE - 1);
+    b.setRotation(Math.atan2(vy, vx) + Math.PI / 2);
+    (b.body as Phaser.Physics.Arcade.Body).setVelocity(vx, vy);
+  }
+
+  private killEnemy(enemy: Phaser.Physics.Arcade.Sprite): void {
+    const kind = enemy.getData("kind") as ThreatKind;
+    const { x, y } = enemy;
+    enemy.destroy();
+    this.explode(x, y);
+    this.cameras.main.flash(40, 18, 38, 52, false);
+    this.scoreKill(kind, x, y);
+  }
+
+  private scoreKill(kind: ThreatKind | "aa", x: number, y: number): void {
+    const base = kind === "boat" ? 40 : kind === "aa" ? 25 : 15;
+    const now  = this.time.now;
+    this.comboCount = (now - this.lastKillTime < COMBO_WINDOW_MS) ? this.comboCount + 1 : 1;
+    this.lastKillTime = now;
+
+    const mult   = Math.min(4, this.comboCount);
+    const points = base * mult;
+    this.score  += points;
+
+    // Score popup
+    const col = mult >= 4 ? "#ffe050" : mult >= 3 ? "#ff8c42" : mult >= 2 ? "#7cfcb4" : "#e8eef2";
+    const txt = mult > 1 ? `+${points} ×${mult}` : `+${points}`;
+    this.spawnFloater(x, y - 8, txt, col);
+
+    if (mult === 4) this.spawnFloater(W / 2, H / 2 - 24, "MAX COMBO!", "#ffe050");
+
+    RetroAudio.playHit();
+    this.updateHud();
+  }
+
+  private explode(x: number, y: number): void {
+    const expl = this.add.image(x, y, "explosion")
+      .setScale(SCALE_EXPL).setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH_EXPL);
+    this.tweens.add({
+      targets: expl, alpha: 0, scale: SCALE_EXPL * 2, duration: 450, ease: "Quad.easeOut",
+      onComplete: () => expl.destroy(),
+    });
+  }
+
+  private spawnFloater(x: number, y: number, text: string, color: string): void {
+    const t = this.add.text(x, y, text, {
+      fontFamily: "VT323, monospace", fontSize: "18px", color,
+    }).setOrigin(0.5).setDepth(DEPTH_EXPL + 1);
+    this.tweens.add({
+      targets: t, y: y - 30, alpha: 0, duration: 900, ease: "Quad.easeOut",
+      onComplete: () => t.destroy(),
+    });
+  }
+
+  // ==========================================================================
+  // Spawning
+  // ==========================================================================
+
+  private spawnWave(): void {
     if (this.gameOver) return;
     this.wave += 1;
-    const count = 2 + Math.min(7, Math.floor(this.wave / 2));
-    for (let i = 0; i < count; i++) {
-      this.time.delayedCall(i * 140, () => this.spawnRandomThreat());
+
+    // Every 3rd wave after wave 3 is a formation
+    this.formationCounter++;
+    if (this.wave > 3 && this.formationCounter >= 3) {
+      this.formationCounter = 0;
+      const kinds: FormationKind[] = this.wave > 8
+        ? ["v_drones", "pincer", "line_drones"]
+        : ["v_drones", "pincer"];
+      this.spawnFormation(kinds[Phaser.Math.Between(0, kinds.length - 1)]);
+    } else {
+      const count = 1 + Math.min(6, Math.floor(this.wave / 2));
+      for (let i = 0; i < count; i++) {
+        this.time.delayedCall(i * 180, () => this.spawnRandomThreat());
+      }
     }
 
+    // Patriot resupply every 4 waves
     if (this.wave > 1 && this.wave % 4 === 0) {
-      const old = this.ballistics;
-      this.ballistics = Math.min(BALLISTICS_MAX, this.ballistics + 5);
-      if (this.ballistics > old) RetroAudio.playUi();
+      const prev = this.patriots;
+      this.patriots = Math.min(PATRIOTS_MAX, this.patriots + 5);
+      if (this.patriots > prev) {
+        RetroAudio.playUi();
+        this.spawnFloater(W / 2, H / 2, "PATRIOTS RESUPPLIED", "#7cfcb4");
+      }
     }
 
     this.updateHud();
@@ -328,126 +765,181 @@ export class PatrolScene extends Phaser.Scene {
 
   private spawnRandomThreat(): void {
     if (this.gameOver) return;
-    const boat = Phaser.Math.Between(0, 100) < 30;
-    this.spawnThreat(boat ? "boat" : "drone", Phaser.Math.Between(24, W - 24));
+    if (Math.random() < 0.22) {
+      this.spawnThreat("boat", 0, Math.random() < 0.5 ? "left" : "right");
+    } else {
+      this.spawnThreat("drone", Phaser.Math.Between(20, W - 20), "top");
+    }
   }
 
-  private spawnThreat(kind: ThreatKind, x: number): void {
+  private spawnFormation(kind: FormationKind): void {
     if (this.gameOver) return;
-    const y = kind === "boat" ? -28 : -22;
-    const key = kind === "boat" ? "hs_boat" : "hs_drone";
-    const sprite = this.physics.add.sprite(x, y, key);
-    sprite.setData("kind", kind);
-    sprite.setDepth(DEPTH_THREAT);
+    switch (kind) {
+      case "v_drones": {
+        const cx = Phaser.Math.Between(80, W - 80);
+        this.spawnThreat("drone", cx, "top");
+        this.time.delayedCall(180, () => {
+          this.spawnThreat("drone", cx - 28, "top");
+          this.spawnThreat("drone", cx + 28, "top");
+        });
+        this.time.delayedCall(360, () => {
+          this.spawnThreat("drone", cx - 56, "top");
+          this.spawnThreat("drone", cx + 56, "top");
+        });
+        this.spawnFloater(W / 2, 60, "DRONE FORMATION", "#d94a2a");
+        break;
+      }
+      case "pincer": {
+        this.spawnThreat("boat", 0, "left");
+        this.spawnThreat("boat", 0, "right");
+        this.time.delayedCall(600, () => {
+          if (!this.gameOver) {
+            this.spawnThreat("boat", 0, "left");
+            this.spawnThreat("boat", 0, "right");
+          }
+        });
+        this.spawnFloater(W / 2, 60, "PINCER ATTACK", "#d94a2a");
+        break;
+      }
+      case "line_drones": {
+        for (let i = 0; i < 5; i++) {
+          this.time.delayedCall(i * 160, () => {
+            this.spawnThreat("drone", 32 + i * 64, "top");
+          });
+        }
+        this.spawnFloater(W / 2, 60, "BROADSIDE SWEEP", "#d94a2a");
+        break;
+      }
+    }
+  }
+
+  private spawnThreat(kind: ThreatKind, x: number, entry: "top" | "left" | "right"): void {
+    if (this.gameOver) return;
+    const key   = kind === "boat" ? "enemy-boat"  : "enemy-drone";
+    const scale = kind === "boat" ? SCALE_BOAT     : SCALE_DRONE;
+    let sx: number, sy: number, vx: number, vy: number;
+
+    if (entry === "top") {
+      sx = x; sy = -30;
+      vx = Phaser.Math.Between(-25, 25); vy = Phaser.Math.Between(60, 95);
+    } else if (entry === "left") {
+      sx = -32; sy = Phaser.Math.Between(10, 60);
+      vx = Phaser.Math.Between(30, 55); vy = Phaser.Math.Between(40, 68);
+    } else {
+      sx = W + 32; sy = Phaser.Math.Between(10, 60);
+      vx = Phaser.Math.Between(-55, -30); vy = Phaser.Math.Between(40, 68);
+    }
+
+    const sprite = this.enemies.create(sx, sy, key) as Phaser.Physics.Arcade.Sprite;
+    sprite.setScale(scale).setDepth(DEPTH_THREAT).setData("kind", kind);
+
+    if (kind === "drone") {
+      sprite.setData("phase", Math.random() * Math.PI * 2);
+      sprite.setData("amp", Phaser.Math.Between(28, 55));
+    }
+
+    // Fire timer — staggered so not everyone fires at once
+    sprite.setData("nextFire",
+      this.time.now + Phaser.Math.Between(800, 2400));
 
     const body = sprite.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(false);
-
-    if (kind === "boat") {
-      body.setVelocity(Phaser.Math.Between(-32, 32), Phaser.Math.Between(36, 58));
-      body.setAngularVelocity(Phaser.Math.Between(-35, 35));
-    } else {
-      body.setVelocity(Phaser.Math.Between(-50, 50), Phaser.Math.Between(68, 108));
-    }
-
-    this.enemies.add(sprite);
+    body.setSize(SPRITE_SRC * 0.60, SPRITE_SRC * 0.60);
+    body.setVelocity(vx, vy);
+    sprite.setRotation(Math.atan2(vy, vx) + Math.PI / 2);
   }
 
-  private tryFire(pointer: Phaser.Input.Pointer): void {
-    if (this.gameOver) return;
-    const now = this.time.now;
-    if (now - this.lastFire < FIRE_COOLDOWN_MS) return;
-    if (this.ballistics <= 0) return;
+  // ==========================================================================
+  // Game over
+  // ==========================================================================
 
-    this.ballistics -= 1;
-    this.lastFire = now;
-    RetroAudio.playFire();
-
-    const ox = W / 2;
-    const oy = H - 22;
-    const px = pointer.worldX ?? pointer.x;
-    const py = pointer.worldY ?? pointer.y;
-    const ang = Phaser.Math.Angle.Between(ox, oy, px, py);
-
-    const shot = this.physics.add.sprite(ox, oy, "hs_missile");
-    shot.setDepth(DEPTH_MISSILE);
-    shot.setRotation(ang + Math.PI / 2);
-    const body = shot.body as Phaser.Physics.Arcade.Body;
-    body.setVelocity(Math.cos(ang) * MISSILE_SPEED, Math.sin(ang) * MISSILE_SPEED);
-    this.shots.add(shot);
+  private getGrade(): string {
+    const pct = this.tankers / TANKERS_START;
+    if (pct >= 0.80) return "S";
+    if (pct >= 0.60) return "A";
+    if (pct >= 0.40) return "B";
+    if (pct >= 0.20) return "C";
+    return "D";
   }
 
   private endGame(won: boolean): void {
     if (this.gameOver) return;
     this.gameOver = true;
     this.physics.pause();
+    this.vignette.clear();
+
+    won ? RetroAudio.playWin() : RetroAudio.playLose();
 
     if (won) {
-      RetroAudio.playWin();
       try {
-        if (this.score > this.hi) {
-          this.hi = this.score;
-          localStorage.setItem(HISCORE_KEY, String(this.score));
-        }
-      } catch {
-        /* ignore */
-      }
-    } else {
-      RetroAudio.playLose();
+        if (this.score > this.hi) { this.hi = this.score; localStorage.setItem(HISCORE_KEY, String(this.score)); }
+      } catch { /**/ }
     }
 
-    const head = won ? "VICTORY" : "CONVOY LOST";
-    const sub = won
-      ? `Strait held — ${this.tankers} tankers · wave ${this.wave}\nSCORE ${this.score}`
-      : `${Math.floor(this.survivedMs / 1000)}s · wave ${this.wave}\nSCORE ${this.score}`;
+    const grade = won ? this.getGrade() : "—";
+    const head  = won ? `VICTORY  ${grade}` : "CONVOY LOST";
+    const body  = won
+      ? `${this.tankers} tankers saved · wave ${this.wave}\nSCORE  ${this.score}`
+      : `${Math.floor(this.survivedMs / 1000)}s survived · wave ${this.wave}\nSCORE  ${this.score}`;
+    const gradeColor = grade === "S" ? "#ffe050" : grade === "A" ? "#7cfcb4" : grade === "B" ? "#4a90d9" : "#c9a227";
 
-    this.add
-      .text(W / 2, H / 2 - 38, head, {
-        fontFamily: "Libre Baskerville, Georgia, serif",
-        fontSize: "26px",
-        color: won ? "#7cfcb4" : "#ff6655",
-        align: "center",
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH_GAMEOVER);
-
-    this.add
-      .text(W / 2, H / 2 + 6, sub, {
-        fontFamily: "VT323, monospace",
-        fontSize: "20px",
-        color: "#e8eef2",
-        align: "center",
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH_GAMEOVER);
-
-    this.add
-      .text(W / 2, H / 2 + 70, "ENTER / ESC — command deck   ·   R — patrol again", {
-        fontFamily: "VT323, monospace",
-        fontSize: "16px",
-        color: "#8a9ba8",
-        align: "center",
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH_GAMEOVER);
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.65).setDepth(DEPTH_GAMEOVER - 1);
+    this.add.text(W / 2, H / 2 - 40, head, {
+      fontFamily: "Libre Baskerville, Georgia, serif",
+      fontSize: "26px", color: won ? gradeColor : "#ff6655", align: "center",
+    }).setOrigin(0.5).setDepth(DEPTH_GAMEOVER);
+    this.add.text(W / 2, H / 2 + 6, body, {
+      fontFamily: "VT323, monospace", fontSize: "20px", color: "#e8eef2", align: "center",
+    }).setOrigin(0.5).setDepth(DEPTH_GAMEOVER);
+    this.add.text(W / 2, H / 2 + 68, "ENTER / ESC — menu  ·  R — play again", {
+      fontFamily: "VT323, monospace", fontSize: "15px", color: "#8a9ba8", align: "center",
+    }).setOrigin(0.5).setDepth(DEPTH_GAMEOVER);
 
     const kb = this.input.keyboard;
     kb?.once("keydown-ENTER", () => this.quitToTitle());
-    kb?.once("keydown-ESC", () => this.quitToTitle());
-    kb?.once("keydown-R", () => {
-      this.scene.restart();
-    });
+    kb?.once("keydown-ESC",   () => this.quitToTitle());
+    kb?.once("keydown-R",     () => this.scene.restart());
   }
+
+  // ==========================================================================
+  // HUD
+  // ==========================================================================
 
   private updateHud(): void {
     const rem = Math.max(0, Math.ceil((WIN_MS - this.survivedMs) / 1000));
-    this.hudTankers.setText(`TANKERS ${this.tankers}`);
-    this.hudMissiles.setText(`BALLISTICS ${this.ballistics}/${BALLISTICS_MAX}`);
-    this.hudWave.setText(`WAVE ${this.wave}`);
-    this.hudTime.setText(`TIME ${rem}s`);
-    this.hudScore.setText(`SCORE ${this.score}`);
+    const pct = this.tankers / TANKERS_START;
+
+    this.hudTankerCount.setText(`${this.tankers}`);
+    this.hudPatriots.setText(`PAT ${this.patriots}/${PATRIOTS_MAX}`);
+    this.hudWave.setText(`W${this.wave}`);
+    this.hudTime.setText(`${rem}s`);
+    this.hudScore.setText(`${this.score}`);
     this.hudHi.setText(`HI ${this.hi}`);
+
+    let colour: number; let colourHex: string;
+    if      (pct > 0.6)  { colour = 0x7cfcb4; colourHex = "#7cfcb4"; }
+    else if (pct > 0.35) { colour = 0xe6c84a; colourHex = "#e6c84a"; }
+    else if (pct > 0.15) { colour = 0xd94a2a; colourHex = "#d94a2a"; }
+    else                 { colour = 0xff2222; colourHex = "#ff2222"; }
+    this.hudTankerCount.setColor(colourHex);
+
+    const BH = 100, BX = 3, BAR_TOP = H / 2 - 30;
+    this.hudConvoyBar.clear();
+    const fillH = Math.round(BH * pct);
+    if (fillH > 0) {
+      this.hudConvoyBar.fillStyle(colour, 0.9);
+      this.hudConvoyBar.fillRect(BX, BAR_TOP + (BH - fillH), 6, fillH);
+    }
+    if (pct <= 0.15) {
+      const pulse = Math.sin(this.survivedMs / 120) > 0 ? 0xff2222 : 0x660000;
+      this.hudConvoyBar.lineStyle(1, pulse, 1);
+      this.hudConvoyBar.strokeRect(BX, BAR_TOP, 6, BH);
+    }
   }
+
+  // ==========================================================================
+  // Exit
+  // ==========================================================================
 
   private quitToTitle(): void {
     if (this.exited) return;

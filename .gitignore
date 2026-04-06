@@ -5,6 +5,4 @@ dist/
 .env
 .env.*
 !.env.example
-
-# Stability CLI output (copy winners to public/title-bg.png etc.)
-public/generated/
+.cursor/

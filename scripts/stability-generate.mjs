@@ -14,6 +14,8 @@
  *   Meridian deck — dark chrome UI, fake CRT meters, gold trim, cold blue backlight, empty panels.
  *   Ashar brief — parchment war map, red marker strokes, torchlight, serious not fantasy cartoon.
  *   Sprites — isolated drone + boat on flat background for cutout (then index-colour in Aseprite).
+ *   Carrier deck — npm run generate:carrier → public/generated/carrier-cinemaware.png
+ *     (Cinemaware-style flight deck for Three.js; game falls back to canvas if missing).
  *
  * Never commit API keys — use .env only (see .env.example).
  */
@@ -36,20 +38,43 @@ const DEFAULT_PROMPT = [
 const DEFAULT_NEGATIVE =
   "text, watermark, logo, typography, modern CGI, anime, photorealistic faces, depth of field, bokeh";
 
+const PRESET_CARRIER = [
+  "1990 Amiga Cinemaware painted US Navy aircraft carrier flight deck,",
+  "oblique top-down view, grey steel hull, island superstructure, runway centerline, Gulf sea haze,",
+  "dramatic warm sunset light, limited palette painterly computer game illustration,",
+  "no text, no logos, no photorealistic faces, no modern HDR",
+].join(" ");
+
+const PRESET_MISSILE_INBOUND = [
+  "Isolated ballistic cruise missile in flight, side view, vertical composition, pointed nose cone,",
+  "orange red body, small fins, faint smoke trail, 1990 Amiga Cinemaware game sprite art,",
+  "limited palette, solid flat black background, centered subject,",
+  "no text, no watermark, no UI",
+].join(" ");
+
+const PRESET_MISSILE_INTERCEPTOR = [
+  "Isolated SAM interceptor missile, side view, vertical, short agile body, golden yellow flare at rear,",
+  "navy white paint, 1990 Amiga computer game sprite, limited colours, solid black background,",
+  "no text, no watermark",
+].join(" ");
+
 function parseArgs(argv) {
   let name = null;
   let aspect = "16:9";
+  let preset = null;
   const rest = [];
   for (const a of argv) {
     if (a.startsWith("--name=")) {
       name = a.slice(7).replace(/[^a-z0-9-_]/gi, "-");
     } else if (a.startsWith("--aspect=")) {
       aspect = a.slice(9).trim() || "16:9";
+    } else if (a.startsWith("--preset=")) {
+      preset = a.slice(9).trim();
     } else {
       rest.push(a);
     }
   }
-  return { name, aspect, rest };
+  return { name, aspect, preset, rest };
 }
 
 async function main() {
@@ -59,9 +84,19 @@ async function main() {
     process.exit(1);
   }
 
-  const { name, aspect, rest } = parseArgs(process.argv.slice(2));
+  const { name, aspect, preset, rest } = parseArgs(process.argv.slice(2));
   const userPrompt = rest.join(" ").trim();
-  const prompt = userPrompt || DEFAULT_PROMPT;
+  let prompt = userPrompt;
+  if (!prompt && preset === "carrier") {
+    prompt = PRESET_CARRIER;
+  }
+  if (!prompt && preset === "missile-inbound") {
+    prompt = PRESET_MISSILE_INBOUND;
+  }
+  if (!prompt && preset === "missile-interceptor") {
+    prompt = PRESET_MISSILE_INTERCEPTOR;
+  }
+  if (!prompt) prompt = DEFAULT_PROMPT;
 
   mkdirSync(outDir, { recursive: true });
 
