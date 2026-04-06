@@ -10,7 +10,7 @@ import {
 const PLANT_HP = 4;
 const MISSILE_SPEED = 10;
 const INTERCEPTOR_SPEED = 42;
-const HIT_R = 2.4;
+const HIT_R = 3.2;
 const SPAWN_EVERY_MS = 2200;
 const WIN_SURVIVE_MS = 90_000;
 const STARTING_INTERCEPTORS = 12;
@@ -180,7 +180,7 @@ export function createInterceptGame(): InterceptAPI {
 
     const mesh = new THREE.Sprite(inboundMat);
     mesh.position.set(x, y, z);
-    mesh.scale.set(2.4, 8, 1);
+    mesh.scale.set(3.2, 10, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 
@@ -213,7 +213,7 @@ export function createInterceptGame(): InterceptAPI {
 
     const mesh = new THREE.Sprite(interceptorMat);
     mesh.position.copy(origin);
-    mesh.scale.set(1.6, 5, 1);
+    mesh.scale.set(2.4, 7.5, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 

@@ -1,8 +1,9 @@
 import * as THREE from "three";
 
 /**
- * Tiny bitmap sprites for Gulf SDI — same idea as PatrolScene.generateTextures():
- * filled rects, no gradients, reads clearly after 320×256 + meridian quantize.
+ * Bitmap missiles for Gulf SDI — same *spirit* as PatrolScene.generateTextures()
+ * (hand-pixelled, nearest-neighbour), but larger silhouettes so they read at 320×240.
+ * Top of image = nose (toward target when flying).
  */
 
 function canvasToNearestTex(c: HTMLCanvasElement): THREE.CanvasTexture {
@@ -14,34 +15,139 @@ function canvasToNearestTex(c: HTMLCanvasElement): THREE.CanvasTexture {
   return tex;
 }
 
-/** Patriot-style: gold body + orange tail (PatrolScene lines 205–208), vertical for 3D billboard. */
-export function makeInterceptorSpriteTexture(): THREE.CanvasTexture {
-  const w = 3;
-  const h = 9;
-  const c = document.createElement("canvas");
+function paintGrid(
+  c: HTMLCanvasElement,
+  rows: string[],
+  palette: Record<string, string>,
+): void {
+  const h = rows.length;
+  const w = rows.reduce((m, r) => Math.max(m, r.length), 0);
   c.width = w;
   c.height = h;
   const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#ffe050";
-  ctx.fillRect(0, 0, w, h - 2);
-  ctx.fillStyle = "#ff9800";
-  ctx.fillRect(0, h - 2, w, 2);
+  ctx.imageSmoothingEnabled = false;
+  for (let y = 0; y < h; y++) {
+    const row = rows[y] ?? "";
+    for (let x = 0; x < row.length; x++) {
+      const ch = row[x]!;
+      const hex = palette[ch];
+      if (hex === undefined || hex === "") continue;
+      ctx.fillStyle = hex;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+/** SAM / patriot-class — gold body, orange band, tiny glint (reads like Patrol patriot, taller). */
+export function makeInterceptorSpriteTexture(): THREE.CanvasTexture {
+  const rows = [
+    "       #       ",
+    "      ###      ",
+    "     ##G##     ",
+    "    ##GGG##    ",
+    "   ##GGGGG##   ",
+    "   #GGGGGGG#   ",
+    "   #GGGGGGG#   ",
+    "   #GGGGGGG#   ",
+    "   #GGGGGGG#   ",
+    "   #GGGGGGG#   ",
+    "  ##GGGGGGG##  ",
+    "  #GGGwGGGGG#  ",
+    "  #GGGGGGGGG#  ",
+    "  #GGGGGGGGG#  ",
+    "  #GGGGGGGGG#  ",
+    " ##GGGGGGGGG## ",
+    " #GGGGGGGGGGG# ",
+    " #GGGGGGGGGGG# ",
+    " #GGGGGGGGGGG# ",
+    " #GGGGGGGGGGG# ",
+    "##GGGGGGGGGGG##",
+    "#GGGGGGGGGGGGG#",
+    "#GGGGGGGGGGGGG#",
+    "#GGGGGGGGGGGGG#",
+    "#GGGGGGooGGGGG#",
+    "#GGGGGooooGGGG#",
+    "#GGGGooooooGGG#",
+    " #GoooooooooG# ",
+    " ##oooooooo##  ",
+    "  #oooooooo#   ",
+    "   #oooooo#    ",
+    "    #oooo#     ",
+    "     ####      ",
+  ];
+  const palette: Record<string, string> = {
+    " ": "",
+    "#": "#c9a227",
+    G: "#ffe898",
+    w: "#ffffff",
+    o: "#ff9800",
+  };
+  const c = document.createElement("canvas");
+  paintGrid(c, rows, palette);
   return canvasToNearestTex(c);
 }
 
-/** Inbound threat — orange dart, same family as PatrolScene enemy-bullet. */
+/** Inbound ballistic — tapered nose, fins, exhaust plume (not a solid rectangle). */
 export function makeInboundSpriteTexture(): THREE.CanvasTexture {
-  const w = 4;
-  const h = 22;
+  const rows = [
+    "       ##       ",
+    "      ####      ",
+    "     ##nn##     ",
+    "    ##nnnn##    ",
+    "   ###nnnn###   ",
+    "  ##xxrrrrxx##  ",
+    " ##xxrrRRrrxx## ",
+    " #xxrrRRRRrrxx# ",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "##xxrrRRRRrrxx##",
+    " #xxrrRRRRrrxx# ",
+    " #xxrrRRRRrrxx# ",
+    " #xxrrRRRRrrxx# ",
+    "##xxrrRRRRrrxx##",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "##xxrrRRRRrrxx##",
+    " #xxrrRRRRrrxx# ",
+    " #xxrrRRRRrrxx# ",
+    "##xxrrRRRRrrxx##",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "#xxrrRRRRRRrrxx#",
+    "##xxrrRRRRrrxx##",
+    " #xxrrRRRRrrxx# ",
+    " ##xxrrrrrrxx## ",
+    "  ##xxxxxxxx##  ",
+    "   #xxxxxxxx#   ",
+    "   #xooooooox#  ",
+    "  ##xooooooox## ",
+    " ##xxooooooooxx##",
+    "##xxooooooooooxx##",
+    "#xxooooooooooooxx#",
+    "#xxooeoeoeoeoooxx#",
+    " ##oooooooooo##  ",
+    "  ##oooooooo##   ",
+    "   #########     ",
+  ];
+  const palette: Record<string, string> = {
+    " ": "",
+    "#": "#5a1010",
+    x: "#3a0808",
+    n: "#fff5d0",
+    r: "#ff5530",
+    R: "#c01810",
+    o: "#ff7720",
+    e: "#ffcc55",
+  };
   const c = document.createElement("canvas");
-  c.width = w;
-  c.height = h;
-  const ctx = c.getContext("2d")!;
-  ctx.fillStyle = "#ff2200";
-  ctx.fillRect(1, 0, 2, 5);
-  ctx.fillStyle = "#ff5500";
-  ctx.fillRect(0, 5, w, h - 5);
-  ctx.fillStyle = "#ffcc66";
-  ctx.fillRect(1, 2, 2, 2);
+  paintGrid(c, rows, palette);
   return canvasToNearestTex(c);
 }

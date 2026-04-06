@@ -46,6 +46,13 @@ if (params.has("nodither")) pipeline.setDitherStrength(0);
 else if (params.has("dither")) pipeline.setDitherStrength(14);
 if (params.has("scan")) pipeline.setScanlineStrength(0.06);
 
+/** Meridian post used on hub — Gulf SDI matches Patrol (full colour @ 320×256, no quantize/dither). */
+const hubPostState = {
+  quantize: true,
+  dither: pipeline.material.uniforms.uDitherStrength.value as number,
+  scan: pipeline.material.uniforms.uScanlineStrength.value as number,
+};
+
 // ---------------------------------------------------------------------------
 // DOM refs
 // ---------------------------------------------------------------------------
@@ -83,6 +90,11 @@ function startIntercept(): void {
   if (phaserGame || interceptMode) return;
   intercept.reset();
   interceptMode = true;
+  if (usePost) {
+    pipeline.setPaletteQuantize(false);
+    pipeline.setDitherStrength(0);
+    pipeline.setScanlineStrength(0);
+  }
   if (introEl) introEl.hidden = true;
   if (briefingEl) briefingEl.hidden = true;
   setHint("Gulf SDI — click to launch interceptors from the carrier · ESC — menu");
@@ -91,6 +103,11 @@ function startIntercept(): void {
 function stopIntercept(): void {
   if (!interceptMode) return;
   interceptMode = false;
+  if (usePost) {
+    pipeline.setPaletteQuantize(hubPostState.quantize);
+    pipeline.setDitherStrength(hubPostState.dither);
+    pipeline.setScanlineStrength(hubPostState.scan);
+  }
   show(introEl);
   setHint("1 patrol · 2 briefing · 3 Gulf SDI (carrier)");
 }

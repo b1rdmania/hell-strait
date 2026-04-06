@@ -42,6 +42,7 @@ uniform vec2 uLowRes;
 uniform vec3 uPalette[${PALETTE_COUNT}];
 uniform float uDitherStrength;
 uniform float uScanlineStrength;
+uniform float uPaletteQuantize;
 
 varying vec2 vUv;
 out vec4 fragColor;
@@ -82,16 +83,17 @@ void main() {
   vec2 texel = floor(uv * uLowRes);
   vec3 col = texture(tDiffuse, uv).rgb;
 
-  // Ordered dither before quantize: on *flat* dark fills it flips between two similar
-  // palette colours every pixel → full-screen checkerboard "snow". Only run when asked.
-  if (uDitherStrength > 0.001) {
-    vec2 bUv = (mod(texel, 4.0) + 0.5) / 4.0;
-    float b = texture(tBayer, bUv).r;
-    col += (b - 0.5) * (uDitherStrength / 255.0) * 2.5;
-    col = clamp(col, 0.0, 1.0);
+  // Hub/title: meridian quantize (+ optional dither). Gulf SDI / Patrol-style scenes can turn
+  // this off so 3D matches full-colour pixel art (Phaser) instead of dithered 18-colour mud.
+  if (uPaletteQuantize > 0.5) {
+    if (uDitherStrength > 0.001) {
+      vec2 bUv = (mod(texel, 4.0) + 0.5) / 4.0;
+      float b = texture(tBayer, bUv).r;
+      col += (b - 0.5) * (uDitherStrength / 255.0) * 2.5;
+      col = clamp(col, 0.0, 1.0);
+    }
+    col = nearestPalette(col);
   }
-
-  col = nearestPalette(col);
 
   float scan = mod(texel.y, 2.0) < 1.0 ? (1.0 - uScanlineStrength) : 1.0;
   col *= scan;
@@ -148,6 +150,7 @@ export class RetroPipeline {
         uPalette: { value: paletteVec3 },
         uDitherStrength: { value: 9.0 },
         uScanlineStrength: { value: 0.0 },
+        uPaletteQuantize: { value: 1.0 },
       },
       vertexShader: postVert,
       fragmentShader: postFrag,
@@ -175,6 +178,11 @@ export class RetroPipeline {
 
   setScanlineStrength(value: number): void {
     this.material.uniforms.uScanlineStrength.value = value;
+  }
+
+  /** When false, skip meridian quantize + dither (still 320×256 upscale + letterbox). */
+  setPaletteQuantize(enabled: boolean): void {
+    this.material.uniforms.uPaletteQuantize.value = enabled ? 1.0 : 0.0;
   }
 
   setPalette(paletteHex: string[]): void {
