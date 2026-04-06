@@ -69,6 +69,7 @@ const ghTime = document.getElementById("gh-time");
 const ghWave = document.getElementById("gh-wave");
 const ghPlants = document.getElementById("gh-plants");
 const ghInterceptors = document.getElementById("gh-interceptors");
+const ghHi = document.getElementById("gh-hi");
 const ghBanner = document.getElementById("gh-banner");
 const ghCombo = document.getElementById("gh-combo");
 
@@ -127,6 +128,7 @@ function updateGulfHud(state: InterceptState, dt: number): void {
   if (ghScore) ghScore.textContent = `${state.score}`;
   if (ghTime) ghTime.textContent = `${state.timeRemaining}s`;
   if (ghWave) ghWave.textContent = `W${state.wave}`;
+  if (ghHi) ghHi.textContent = `HI ${state.hi}`;
   if (ghInterceptors) ghInterceptors.textContent = `SM-3 ×${state.interceptors}`;
 
   if (ghPlants) {
@@ -173,9 +175,10 @@ function showGulfGameOver(state: InterceptState): void {
   goHead.textContent = won ? `VICTORY  ${grade}` : "INFRASTRUCTURE LOST";
   goHead.style.color = won ? gradeColor : "#ff6655";
 
+  const hiLine = state.score >= state.hi ? " ★ NEW HI" : `  HI ${state.hi}`;
   const body = won
-    ? `${state.plants} plants defended · wave ${state.wave}\nSCORE  ${state.score}`
-    : `${90 - state.timeRemaining}s survived · wave ${state.wave}\nSCORE  ${state.score}`;
+    ? `${state.plants} plants defended · wave ${state.wave}\nSCORE  ${state.score}${hiLine}`
+    : `${90 - state.timeRemaining}s survived · wave ${state.wave}\nSCORE  ${state.score}${hiLine}`;
   goBody.textContent = body;
 
   gulfGameOver.classList.add("is-active");
