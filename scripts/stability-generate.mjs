@@ -14,8 +14,10 @@
  *   Meridian deck — dark chrome UI, fake CRT meters, gold trim, cold blue backlight, empty panels.
  *   Ashar brief — parchment war map, red marker strokes, torchlight, serious not fantasy cartoon.
  *   Sprites — isolated drone + boat on flat background for cutout (then index-colour in Aseprite).
- *   Carrier deck — npm run generate:carrier → public/generated/carrier-cinemaware.png
- *     (Cinemaware-style flight deck for Three.js; game falls back to canvas if missing).
+ *   Strait / hub plates — npm run generate:bg-strait | generate:command-deck (default strait prompt).
+ *   Gulf SDI — npm run generate:gulf-bg | generate:carrier | generate:missile-inbound |
+ *     generate:missile-interceptor, or npm run generate:all-stability for every preset.
+ *   Outputs land in public/generated/; Gulf SDI loads PNGs when present and keeps procedural fallback.
  *
  * Never commit API keys — use .env only (see .env.example).
  */
