@@ -2,7 +2,8 @@ import * as THREE from "three";
 
 /**
  * Bitmap missiles for Gulf SDI — same *spirit* as PatrolScene.generateTextures()
- * (hand-pixelled, nearest-neighbour), but larger silhouettes so they read at 320×240.
+ * (hand-pixelled, nearest-neighbour). Inbound is intentionally **narrow** so it
+ * scales up without reading as a vague red blob.
  * Top of image = nose (toward target when flying).
  */
 
@@ -38,7 +39,7 @@ function paintGrid(
   }
 }
 
-/** SAM / patriot-class — gold body, orange band, tiny glint (reads like Patrol patriot, taller). */
+/** SAM / patriot-class — gold body, orange band, tiny glint. */
 export function makeInterceptorSpriteTexture(): THREE.CanvasTexture {
   const rows = [
     "       #       ",
@@ -82,72 +83,44 @@ export function makeInterceptorSpriteTexture(): THREE.CanvasTexture {
     w: "#ffffff",
     o: "#ff9800",
   };
-  const c = document.createElement("canvas");
-  paintGrid(c, rows, palette);
-  return canvasToNearestTex(c);
+  const canvas = document.createElement("canvas");
+  paintGrid(canvas, rows, palette);
+  return canvasToNearestTex(canvas);
 }
 
-/** Inbound ballistic — tapered nose, fins, exhaust plume (not a solid rectangle). */
+/** Inbound ballistic — **narrow** dart: white nose, dark body, orange exhaust. */
 export function makeInboundSpriteTexture(): THREE.CanvasTexture {
   const rows = [
-    "       ##       ",
-    "      ####      ",
-    "     ##nn##     ",
-    "    ##nnnn##    ",
-    "   ###nnnn###   ",
-    "  ##xxrrrrxx##  ",
-    " ##xxrrRRrrxx## ",
-    " #xxrrRRRRrrxx# ",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "##xxrrRRRRrrxx##",
-    " #xxrrRRRRrrxx# ",
-    " #xxrrRRRRrrxx# ",
-    " #xxrrRRRRrrxx# ",
-    "##xxrrRRRRrrxx##",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "##xxrrRRRRrrxx##",
-    " #xxrrRRRRrrxx# ",
-    " #xxrrRRRRrrxx# ",
-    "##xxrrRRRRrrxx##",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "#xxrrRRRRRRrrxx#",
-    "##xxrrRRRRrrxx##",
-    " #xxrrRRRRrrxx# ",
-    " ##xxrrrrrrxx## ",
-    "  ##xxxxxxxx##  ",
-    "   #xxxxxxxx#   ",
-    "   #xooooooox#  ",
-    "  ##xooooooox## ",
-    " ##xxooooooooxx##",
-    "##xxooooooooooxx##",
-    "#xxooooooooooooxx#",
-    "#xxooeoeoeoeoooxx#",
-    " ##oooooooooo##  ",
-    "  ##oooooooo##   ",
-    "   #########     ",
+    "      w       ",
+    "     wnw      ",
+    "    wnnnw     ",
+    "   #nnnnn#    ",
+    "  #rrrrrrr#   ",
+    " #xxrrRRrxx#  ",
+    " #xxrRRRrxx#  ",
+    "#xxrrRRRrrxx# ",
+    "#xxrrRRRrrxx# ",
+    "#xxrrRRRrrxx# ",
+    "#xxrrRRRrrxx# ",
+    "#xxrrRRRrrxx# ",
+    " ##rrRRRrr##  ",
+    "  #xxrrrxx#   ",
+    "  #xxxxxxx#   ",
+    "   ##ooo##    ",
+    "    #ooo#     ",
+    "     ###      ",
   ];
   const palette: Record<string, string> = {
     " ": "",
-    "#": "#5a1010",
-    x: "#3a0808",
+    w: "#ffffff",
     n: "#fff5d0",
+    "#": "#4a0808",
+    x: "#2a0404",
     r: "#ff5530",
     R: "#c01810",
-    o: "#ff7720",
-    e: "#ffcc55",
+    o: "#ff8800",
   };
-  const c = document.createElement("canvas");
-  paintGrid(c, rows, palette);
-  return canvasToNearestTex(c);
+  const canvas = document.createElement("canvas");
+  paintGrid(canvas, rows, palette);
+  return canvasToNearestTex(canvas);
 }

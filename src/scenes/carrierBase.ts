@@ -59,11 +59,11 @@ export type CarrierBuild = {
 
 /**
  * Big Nimitz-class style carrier: long hull, full deck, island — Cinemaware read at low internal res.
- * Optional texture: `/generated/carrier-cinemaware.png` (Stability or hand-painted).
+ * Deck uses procedural Meridian canvas only (matches Patrol; no photo textures).
  */
 export function buildAircraftCarrier(
   scene: THREE.Scene,
-  textureLoader: THREE.TextureLoader,
+  _textureLoader: THREE.TextureLoader,
 ): CarrierBuild {
   const group = new THREE.Group();
   group.position.set(0, 0, 0);
@@ -102,25 +102,6 @@ export function buildAircraftCarrier(
   deck.rotation.x = -Math.PI / 2;
   deck.position.set(0, 3.1, 0);
   group.add(deck);
-
-  textureLoader.load(
-    "/generated/carrier-cinemaware.png",
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.minFilter = THREE.NearestFilter;
-      tex.magFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      const prev = deckMat.map;
-      deckMat.map = tex;
-      deckMat.color.setHex(0xffffff);
-      deckMat.needsUpdate = true;
-      if (prev) prev.dispose();
-    },
-    undefined,
-    () => {
-      /* keep procedural deck */
-    },
-  );
 
   // Island superstructure — offset to starboard, readable silhouette
   const island = new THREE.Group();

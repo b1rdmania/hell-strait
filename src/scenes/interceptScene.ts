@@ -2,6 +2,7 @@ import * as THREE from "three";
 import * as RetroAudio from "../audio/retroAudio";
 import meridianPalette from "../palettes/meridian.json";
 import { buildAircraftCarrier } from "./carrierBase";
+import { makeGulfSkyBackdropTexture } from "./interceptBackdrop";
 import {
   makeInboundSpriteTexture,
   makeInterceptorSpriteTexture,
@@ -101,26 +102,15 @@ export function createInterceptGame(): InterceptAPI {
   const textureLoader = new THREE.TextureLoader();
   const camDir = new THREE.Vector3();
 
-  // Background — vertical XY plane behind playfield
-  const bgMat = new THREE.MeshBasicMaterial({ color: c(P[3]!) });
+  // Background — procedural Meridian sky + refinery (no Stability photos)
+  const bgTex = makeGulfSkyBackdropTexture();
+  const bgMat = new THREE.MeshBasicMaterial({
+    map: bgTex,
+    color: 0xffffff,
+  });
   const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(160, 90), bgMat);
   bgPlane.position.set(0, 16, -12);
   scene.add(bgPlane);
-
-  textureLoader.load(
-    "/generated/gulf-bg.png",
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.minFilter = THREE.NearestFilter;
-      tex.magFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      bgMat.map = tex;
-      bgMat.color.setHex(0xffffff);
-      bgMat.needsUpdate = true;
-    },
-    undefined,
-    () => {},
-  );
 
   // Ground (horizontal XZ, y = 0)
   const ground = new THREE.Mesh(
@@ -406,7 +396,7 @@ export function createInterceptGame(): InterceptAPI {
 
     const mesh = new THREE.Sprite(inboundMat);
     mesh.position.set(x, y, z);
-    mesh.scale.set(3, 8, 1);
+    mesh.scale.set(2.2, 6, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 
