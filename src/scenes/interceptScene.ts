@@ -10,7 +10,7 @@ import {
 const PLANT_HP = 4;
 const MISSILE_SPEED = 10;
 const INTERCEPTOR_SPEED = 32;
-const BLAST_R = 7;
+const BLAST_R = 8;
 const SPAWN_EVERY_MS = 2200;
 const WIN_SURVIVE_MS = 90_000;
 const STARTING_INTERCEPTORS = 12;
@@ -74,14 +74,39 @@ export function createInterceptGame(): InterceptAPI {
   camera.position.set(0, 36, 48);
   camera.lookAt(0, 5, -2);
 
+  const textureLoader = new THREE.TextureLoader();
+
+  // ── Stability-generated background ──────────────────────────────────────
+  const bgMat = new THREE.MeshBasicMaterial({ color: c(P[3]!) });
+  const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(160, 90), bgMat);
+  bgPlane.position.set(0, 20, -45);
+  scene.add(bgPlane);
+
+  textureLoader.load(
+    "/generated/gulf-bg.png",
+    (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.NearestFilter;
+      tex.magFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+      bgMat.map = tex;
+      bgMat.color.setHex(0xffffff);
+      bgMat.needsUpdate = true;
+    },
+    undefined,
+    () => { /* keep flat colour */ },
+  );
+
+  // Ground plane (in front of backdrop)
   const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(120, 80),
+    new THREE.PlaneGeometry(120, 40),
     new THREE.MeshBasicMaterial({ color: c(P[3]!) }),
   );
   ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, 0, -5);
+  ground.position.set(0, -0.1, -5);
   scene.add(ground);
 
+  // Gulf water band
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 22),
     new THREE.MeshBasicMaterial({ color: c(P[2]!) }),
@@ -91,18 +116,19 @@ export function createInterceptGame(): InterceptAPI {
   scene.add(water);
 
   // Flash overlay
-  const flashGeo = new THREE.PlaneGeometry(200, 200);
   const flashMat = new THREE.MeshBasicMaterial({
     color: 0xff2200,
     transparent: true,
     opacity: 0,
     depthTest: false,
   });
-  const flashQuad = new THREE.Mesh(flashGeo, flashMat);
+  const flashQuad = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), flashMat);
   flashQuad.position.set(0, 0, camera.position.z - 1);
   flashQuad.renderOrder = 999;
   scene.add(flashQuad);
   let flashTimer = 0;
+
+  // ── Plants (oil infrastructure) ─────────────────────────────────────────
 
   type Plant = { mesh: THREE.Group; x: number; z: number; hp: number };
 
@@ -133,11 +159,61 @@ export function createInterceptGame(): InterceptAPI {
     plants.push({ mesh: g, x, z: -8, hp: PLANT_HP });
   }
 
-  const textureLoader = new THREE.TextureLoader();
+  // ── Carrier (scaled down) ──────────────────────────────────────────────
   const carrier = buildAircraftCarrier(scene, textureLoader);
+  carrier.group.scale.set(0.6, 0.6, 0.6);
+  carrier.group.position.set(0, 0, 20);
 
-  const inboundTex = makeInboundSpriteTexture();
-  const interceptorTex = makeInterceptorSpriteTexture();
+  // ── Missile textures: Stability PNGs with canvas fallback ──────────────
+
+  const inboundFallbackTex = makeInboundSpriteTexture();
+  const interceptorFallbackTex = makeInterceptorSpriteTexture();
+
+  const inboundMat = new THREE.SpriteMaterial({
+    map: inboundFallbackTex,
+    color: 0xffffff,
+    transparent: true,
+    depthTest: true,
+    fog: false,
+    alphaTest: 0.01,
+  });
+
+  textureLoader.load(
+    "/generated/missile-inbound.png",
+    (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.NearestFilter;
+      tex.magFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+      inboundMat.map = tex;
+      inboundMat.needsUpdate = true;
+    },
+    undefined,
+    () => { /* keep canvas fallback */ },
+  );
+
+  const interceptorMat = new THREE.SpriteMaterial({
+    map: interceptorFallbackTex,
+    color: 0xffffff,
+    transparent: true,
+    depthTest: true,
+    fog: false,
+    alphaTest: 0.01,
+  });
+
+  textureLoader.load(
+    "/generated/missile-interceptor.png",
+    (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.NearestFilter;
+      tex.magFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+      interceptorMat.map = tex;
+      interceptorMat.needsUpdate = true;
+    },
+    undefined,
+    () => { /* keep canvas fallback */ },
+  );
 
   // Explosion texture
   const explTex = (() => {
@@ -168,6 +244,8 @@ export function createInterceptGame(): InterceptAPI {
     return tex;
   })();
 
+  // ── Entity types ───────────────────────────────────────────────────────
+
   type Missile = { mesh: THREE.Sprite; vel: THREE.Vector3; alive: boolean };
   type Interceptor = {
     mesh: THREE.Sprite;
@@ -181,23 +259,7 @@ export function createInterceptGame(): InterceptAPI {
   const interceptors: Interceptor[] = [];
   const explosions: Explosion[] = [];
 
-  const inboundMat = new THREE.SpriteMaterial({
-    map: inboundTex,
-    color: 0xffffff,
-    transparent: true,
-    depthTest: true,
-    fog: false,
-    alphaTest: 0.01,
-  });
-
-  const interceptorMat = new THREE.SpriteMaterial({
-    map: interceptorTex,
-    color: 0xffffff,
-    transparent: true,
-    depthTest: true,
-    fog: false,
-    alphaTest: 0.01,
-  });
+  // ── State ──────────────────────────────────────────────────────────────
 
   let outcome: InterceptOutcome = "playing";
   let lastOutcome: InterceptOutcome = "playing";
@@ -218,6 +280,8 @@ export function createInterceptGame(): InterceptAPI {
   const raycaster = new THREE.Raycaster();
   const planeHit = new THREE.Vector3();
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+  // ── Helpers ────────────────────────────────────────────────────────────
 
   function alivePlants(): Plant[] {
     return plants.filter((p) => p.hp > 0);
@@ -245,11 +309,11 @@ export function createInterceptGame(): InterceptAPI {
     });
     const mesh = new THREE.Sprite(mat);
     mesh.position.copy(pos);
-    const startSize = big ? 5 : 3;
+    const startSize = big ? 6 : 3;
     mesh.scale.set(startSize, startSize, 1);
     mesh.renderOrder = 100;
     scene.add(mesh);
-    explosions.push({ mesh, age: 0, maxAge: big ? 0.6 : 0.4 });
+    explosions.push({ mesh, age: 0, maxAge: big ? 0.65 : 0.4 });
   }
 
   function triggerFlash(color: number, intensity: number): void {
@@ -258,7 +322,6 @@ export function createInterceptGame(): InterceptAPI {
     flashTimer = 0.15;
   }
 
-  // Blast detonation: destroy all missiles within radius of a point
   function blastAtPoint(pos: THREE.Vector3): number {
     let kills = 0;
     for (const m of missiles) {
@@ -273,6 +336,8 @@ export function createInterceptGame(): InterceptAPI {
     return kills;
   }
 
+  // ── Spawning ───────────────────────────────────────────────────────────
+
   function spawnMissile(): void {
     if (outcome !== "playing") return;
     const target = pickRandomPlant();
@@ -284,7 +349,7 @@ export function createInterceptGame(): InterceptAPI {
 
     const mesh = new THREE.Sprite(inboundMat);
     mesh.position.set(x, y, z);
-    mesh.scale.set(3.2, 10, 1);
+    mesh.scale.set(3, 9, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 
@@ -346,6 +411,8 @@ export function createInterceptGame(): InterceptAPI {
     }
   }
 
+  // ── Fire interceptor ───────────────────────────────────────────────────
+
   function fireInterceptor(clientX: number, clientY: number, domElement: HTMLElement): void {
     if (outcome !== "playing" || interceptorsLeft <= 0) return;
 
@@ -363,20 +430,21 @@ export function createInterceptGame(): InterceptAPI {
     carrier.group.updateMatrixWorld(true);
     const origin = carrier.getFireWorldPosition();
     const target = planeHit.clone();
-    // Raise target Y so detonation happens mid-air where missiles fly, not at ground level
-    target.y = 8;
+    target.y = 10;
     const dir = target.clone().sub(origin);
     if (dir.lengthSq() < 0.01) dir.set(0, 0.5, -1);
     dir.normalize().multiplyScalar(INTERCEPTOR_SPEED);
 
     const mesh = new THREE.Sprite(interceptorMat);
     mesh.position.copy(origin);
-    mesh.scale.set(2.4, 7.5, 1);
+    mesh.scale.set(2, 6, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 
     interceptors.push({ mesh, vel: dir.clone(), target, alive: true });
   }
+
+  // ── Grade ──────────────────────────────────────────────────────────────
 
   function getGrade(): string {
     const pct = alivePlants().length / plants.length;
@@ -402,6 +470,8 @@ export function createInterceptGame(): InterceptAPI {
       banner,
     };
   }
+
+  // ── Update loop ────────────────────────────────────────────────────────
 
   function update(dt: number): InterceptState {
     if (outcome !== "playing") {
@@ -456,7 +526,7 @@ export function createInterceptGame(): InterceptAPI {
       }
     }
 
-    // Missiles move
+    // Missiles move toward plants
     for (const m of missiles) {
       if (!m.alive) continue;
       m.mesh.position.addScaledVector(m.vel, dt);
@@ -490,27 +560,25 @@ export function createInterceptGame(): InterceptAPI {
       }
     }
 
-    // Interceptors: fly to target, then detonate (Missile Command style)
+    // Interceptors: fly to target, DETONATE on arrival (Missile Command style)
     for (const s of interceptors) {
       if (!s.alive) continue;
       s.mesh.position.addScaledVector(s.vel, dt);
 
       const distToTarget = s.mesh.position.distanceTo(s.target);
-      if (distToTarget < INTERCEPTOR_SPEED * dt * 1.5 || distToTarget < 2) {
-        // Reached target — DETONATE: blast radius kills all nearby missiles
+      if (distToTarget < INTERCEPTOR_SPEED * dt * 1.5 || distToTarget < 2.5) {
         s.alive = false;
         s.mesh.visible = false;
         spawnExplosion(s.target.clone(), true);
+        RetroAudio.playHit();
         const kills = blastAtPoint(s.target);
         if (kills > 0) {
-          RetroAudio.playHit();
           scoreIntercept(kills);
-          triggerFlash(0x1a3a5a, 0.15);
+          triggerFlash(0x1a3a5a, 0.18);
         }
         continue;
       }
 
-      // Safety: if it's flown way past (shouldn't happen but guard)
       if (s.mesh.position.length() > 120) {
         s.alive = false;
         s.mesh.visible = false;
@@ -538,7 +606,7 @@ export function createInterceptGame(): InterceptAPI {
         explosions.splice(i, 1);
         continue;
       }
-      const s = 3 + t * 10;
+      const s = 3 + t * 12;
       e.mesh.scale.set(s, s, 1);
       (e.mesh.material as THREE.SpriteMaterial).opacity = 1 - t;
     }

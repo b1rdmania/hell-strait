@@ -10,7 +10,8 @@
     "generate:carrier": "node scripts/stability-generate.mjs -- --preset=carrier --name=carrier-cinemaware --aspect=16:9",
     "generate:missile-inbound": "node scripts/stability-generate.mjs -- --preset=missile-inbound --name=missile-inbound --aspect=9:16",
     "generate:missile-interceptor": "node scripts/stability-generate.mjs -- --preset=missile-interceptor --name=missile-interceptor --aspect=9:16",
-    "generate:gulf-assets": "npm run generate:carrier && npm run generate:missile-inbound && npm run generate:missile-interceptor"
+    "generate:gulf-bg": "node scripts/stability-generate.mjs -- --preset=gulf-bg --name=gulf-bg --aspect=16:9",
+    "generate:gulf-assets": "npm run generate:gulf-bg && npm run generate:carrier && npm run generate:missile-inbound && npm run generate:missile-interceptor"
   },
   "dependencies": {
     "phaser": "^3.90.0",

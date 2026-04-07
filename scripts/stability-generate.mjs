@@ -58,6 +58,15 @@ const PRESET_MISSILE_INTERCEPTOR = [
   "no text, no watermark",
 ].join(" ");
 
+const PRESET_GULF_BG = [
+  "1989 Amiga Cinemaware painted Gulf oil depot coastal landscape at dusk,",
+  "oil storage tanks, refinery towers, desalination plant, industrial pipes,",
+  "dark Persian Gulf sea in foreground, warm orange sunset sky,",
+  "military defence installation vibe, dramatic lighting,",
+  "limited colour palette, painterly pixel art, retro game background art,",
+  "wide panoramic composition, no text, no logos, no modern CGI, no photorealistic faces",
+].join(" ");
+
 function parseArgs(argv) {
   let name = null;
   let aspect = "16:9";
@@ -95,6 +104,9 @@ async function main() {
   }
   if (!prompt && preset === "missile-interceptor") {
     prompt = PRESET_MISSILE_INTERCEPTOR;
+  }
+  if (!prompt && preset === "gulf-bg") {
+    prompt = PRESET_GULF_BG;
   }
   if (!prompt) prompt = DEFAULT_PROMPT;
 
