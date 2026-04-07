@@ -10,25 +10,26 @@ import {
 // ── Game rules ────────────────────────────────────────────────────────────────
 
 const PLANT_HP = 4;
-const MISSILE_SPEED = 10;
+const MISSILE_SPEED = 8;
+const PLANT_HIT_R = 3.5;
 
 // SM-3 interceptors (limited — like Patriot in Patrol)
-const INTERCEPTOR_SPEED = 32;
+const INTERCEPTOR_SPEED = 28;
 const BLAST_R = 8;
 const STARTING_INTERCEPTORS = 12;
 const INTERCEPTOR_MAX = 24;
-const RESUPPLY_EVERY_MS = 16_000;
+const RESUPPLY_EVERY_MS = 18_000;
 
 // CIWS Phalanx (unlimited — like Cannon in Patrol)
-const CIWS_COOLDOWN_MS = 140;
-const CIWS_SPEED = 65;
-const CIWS_RANGE = 30;
-const CIWS_HIT_R = 2.2;
+const CIWS_COOLDOWN_MS = 150;
+const CIWS_SPEED = 60;
+const CIWS_RANGE = 28;
+const CIWS_HIT_R = 2.5;
 
-// Waves
+// Waves — gentle ramp across 12 waves
 const TOTAL_WAVES = 12;
-const SPAWN_EVERY_MS = 2200;
-const WIN_SURVIVE_MS = 90_000;
+const WAVE_INTERVAL_START_MS = 7000;
+const WAVE_INTERVAL_END_MS = 3500;
 const COMBO_WINDOW_MS = 1500;
 const SURGE_WAVE = 10;
 
@@ -38,7 +39,7 @@ const HISCORE_KEY = "hell-strait-sdi-hiscore";
 
 export type InterceptOutcome = "playing" | "won" | "lost";
 
-type WaveKind = "normal" | "salvo" | "saturation" | "scatter";
+type WaveKind = "normal" | "salvo" | "scatter";
 
 export type InterceptState = {
   outcome: InterceptOutcome;
@@ -75,6 +76,11 @@ function floatBetween(min: number, max: number): number {
 
 function intBetween(min: number, max: number): number {
   return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function waveInterval(w: number): number {
+  const t = Math.min(1, w / TOTAL_WAVES);
+  return WAVE_INTERVAL_START_MS + (WAVE_INTERVAL_END_MS - WAVE_INTERVAL_START_MS) * t;
 }
 
 // ── Game factory ──────────────────────────────────────────────────────────────
@@ -186,56 +192,28 @@ export function createInterceptGame(): InterceptAPI {
   carrier.group.scale.set(0.6, 0.6, 0.6);
   carrier.group.position.set(0, 0, 20);
 
-  // ── Missile textures: Stability PNGs with canvas fallback ─────────────────
+  // ── Canvas-drawn missile sprites (pixel art, no Stability PNGs) ───────────
 
-  const inboundFallbackTex = makeInboundSpriteTexture();
-  const interceptorFallbackTex = makeInterceptorSpriteTexture();
+  const inboundTex = makeInboundSpriteTexture();
+  const interceptorTex = makeInterceptorSpriteTexture();
 
   const inboundMat = new THREE.SpriteMaterial({
-    map: inboundFallbackTex,
+    map: inboundTex,
     color: 0xffffff,
     transparent: true,
     depthTest: true,
     fog: false,
     alphaTest: 0.01,
   });
-
-  textureLoader.load(
-    "/generated/missile-inbound.png",
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.minFilter = THREE.NearestFilter;
-      tex.magFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      inboundMat.map = tex;
-      inboundMat.needsUpdate = true;
-    },
-    undefined,
-    () => {},
-  );
 
   const interceptorMat = new THREE.SpriteMaterial({
-    map: interceptorFallbackTex,
+    map: interceptorTex,
     color: 0xffffff,
     transparent: true,
     depthTest: true,
     fog: false,
     alphaTest: 0.01,
   });
-
-  textureLoader.load(
-    "/generated/missile-interceptor.png",
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.minFilter = THREE.NearestFilter;
-      tex.magFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      interceptorMat.map = tex;
-      interceptorMat.needsUpdate = true;
-    },
-    undefined,
-    () => {},
-  );
 
   // ── CIWS tracer texture ───────────────────────────────────────────────────
 
@@ -297,7 +275,7 @@ export function createInterceptGame(): InterceptAPI {
 
   // ── Entity types ──────────────────────────────────────────────────────────
 
-  type Missile = { mesh: THREE.Sprite; vel: THREE.Vector3; alive: boolean };
+  type Missile = { mesh: THREE.Sprite; vel: THREE.Vector3; targetPlant: Plant; alive: boolean };
   type Interceptor = {
     mesh: THREE.Sprite;
     vel: THREE.Vector3;
@@ -329,7 +307,6 @@ export function createInterceptGame(): InterceptAPI {
   let banner: string | null = null;
   let bannerTimer = 0;
   let surgeFired = false;
-  let waveKindAcc = 0;
 
   const tmpV = new THREE.Vector3();
   const raycaster = new THREE.Raycaster();
@@ -414,33 +391,33 @@ export function createInterceptGame(): InterceptAPI {
     const target = pickRandomPlant();
     if (!target) return;
 
-    const x = floatBetween(-28, 28);
-    const z = floatBetween(-2, 18);
-    const y = 22 + floatBetween(0, 8);
+    const x = target.x + floatBetween(-10, 10);
+    const z = floatBetween(2, 16);
+    const y = 24 + floatBetween(0, 6);
 
     const mesh = new THREE.Sprite(inboundMat);
     mesh.position.set(x, y, z);
-    mesh.scale.set(3, 9, 1);
+    mesh.scale.set(2.4, 7, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 
     tmpV.set(target.x, 1.5, target.z).sub(mesh.position).normalize();
     const vel = tmpV.multiplyScalar(MISSILE_SPEED);
 
-    missiles.push({ mesh, vel: vel.clone(), alive: true });
+    missiles.push({ mesh, vel: vel.clone(), targetPlant: target, alive: true });
   }
 
-  function pickWaveKind(): WaveKind {
-    if (wave < 4) return "normal";
-    waveKindAcc++;
-    if (waveKindAcc >= 3) {
-      waveKindAcc = 0;
-      const kinds: WaveKind[] = wave > 8
-        ? ["salvo", "saturation", "scatter"]
-        : ["salvo", "scatter"];
-      return kinds[intBetween(0, kinds.length - 1)]!;
-    }
-    return "normal";
+  function missileCountForWave(w: number): number {
+    if (w <= 2) return 1;
+    if (w <= 5) return 2;
+    if (w <= 8) return 3;
+    return 4;
+  }
+
+  function pickWaveKind(w: number): WaveKind {
+    if (w < 5) return "normal";
+    if (w >= SURGE_WAVE) return Math.random() < 0.5 ? "salvo" : "scatter";
+    return Math.random() < 0.3 ? "scatter" : "normal";
   }
 
   function spawnWave(): void {
@@ -449,32 +426,30 @@ export function createInterceptGame(): InterceptAPI {
 
     if (wave >= TOTAL_WAVES) {
       allWavesSpawned = true;
-      showBanner("FINAL WAVE");
-      RetroAudio.playAlert();
     }
 
-    const kind = pickWaveKind();
-    const n = 1 + Math.min(3, Math.floor(wave / 3));
+    const kind = pickWaveKind(wave);
+    const n = missileCountForWave(wave);
 
     switch (kind) {
       case "salvo":
         showBanner("MISSILE SALVO");
-        for (let i = 0; i < n + 2; i++) {
-          setTimeout(() => spawnMissile(), i * 150);
-        }
-        break;
-      case "saturation":
-        showBanner("SATURATION STRIKE");
-        for (let i = 0; i < n + 4; i++) {
-          setTimeout(() => spawnMissile(), i * 80);
+        for (let i = 0; i < n; i++) {
+          setTimeout(() => spawnMissile(), i * 300);
         }
         break;
       case "scatter":
         showBanner("SCATTER PATTERN");
-        for (let i = 0; i < n + 1; i++) spawnMissile();
+        for (let i = 0; i < n; i++) spawnMissile();
         break;
       default:
-        for (let i = 0; i < n; i++) spawnMissile();
+        if (wave === TOTAL_WAVES) {
+          showBanner("FINAL WAVE");
+          RetroAudio.playAlert();
+        }
+        for (let i = 0; i < n; i++) {
+          setTimeout(() => spawnMissile(), i * 400);
+        }
         break;
     }
   }
@@ -525,7 +500,7 @@ export function createInterceptGame(): InterceptAPI {
 
     const mesh = new THREE.Sprite(interceptorMat);
     mesh.position.copy(origin);
-    mesh.scale.set(2, 6, 1);
+    mesh.scale.set(1.8, 5, 1);
     mesh.center.set(0.5, 0.5);
     scene.add(mesh);
 
@@ -576,7 +551,7 @@ export function createInterceptGame(): InterceptAPI {
       plantsMax: plants.length,
       interceptors: interceptorsLeft,
       interceptorsMax: INTERCEPTOR_MAX,
-      timeRemaining: Math.max(0, Math.ceil((WIN_SURVIVE_MS - timeMs) / 1000)),
+      timeRemaining: Math.max(0, Math.ceil((90_000 - timeMs) / 1000)),
       score,
       hi,
       wave,
@@ -620,16 +595,15 @@ export function createInterceptGame(): InterceptAPI {
       if (bannerTimer <= 0) banner = null;
     }
 
-    // Surge at wave 10
+    // Surge banner at wave 10
     if (!surgeFired && wave >= SURGE_WAVE) {
       surgeFired = true;
-      showBanner("FINAL SALVO — ALL UNITS");
+      showBanner("SURGE — ALL UNITS");
       RetroAudio.playAlert();
     }
 
-    // Spawn next wave on timer (unless all waves already spawned)
-    const spawnInterval = surgeFired ? SPAWN_EVERY_MS * 0.55 : SPAWN_EVERY_MS;
-    if (!allWavesSpawned && spawnAcc >= spawnInterval) {
+    // Spawn next wave on variable timer
+    if (!allWavesSpawned && spawnAcc >= waveInterval(wave)) {
       spawnAcc = 0;
       spawnWave();
     }
@@ -638,44 +612,39 @@ export function createInterceptGame(): InterceptAPI {
     if (resupplyAcc >= RESUPPLY_EVERY_MS) {
       resupplyAcc = 0;
       const old = interceptorsLeft;
-      interceptorsLeft = Math.min(INTERCEPTOR_MAX, interceptorsLeft + 6);
+      interceptorsLeft = Math.min(INTERCEPTOR_MAX, interceptorsLeft + 4);
       if (interceptorsLeft > old) {
         showBanner("INTERCEPTORS RESUPPLIED");
         RetroAudio.playUi();
       }
     }
 
-    // ── Missiles move toward plants ──────────────────────────────────────
+    // ── Missiles move toward their target plant ─────────────────────────
     for (const m of missiles) {
       if (!m.alive) continue;
       m.mesh.position.addScaledVector(m.vel, dt);
 
-      const tgt = plants.reduce(
-        (best, p) => {
-          if (p.hp <= 0) return best;
-          const d = m.mesh.position.distanceToSquared(tmpV.set(p.x, 1.5, p.z));
-          return d < best.d ? { d, p } : best;
-        },
-        { d: Infinity as number, p: null as Plant | null },
+      const tp = m.targetPlant;
+      const distToPlant = m.mesh.position.distanceTo(
+        tmpV.set(tp.x, 1.5, tp.z),
       );
 
-      if (tgt.p && m.mesh.position.distanceTo(tmpV.set(tgt.p.x, 1.5, tgt.p.z)) < 2.2) {
-        tgt.p.hp -= 1;
-        RetroAudio.playDamage();
-        spawnExplosion(m.mesh.position.clone());
-        triggerFlash(0xff2200, 0.25);
+      if (distToPlant < PLANT_HIT_R || m.mesh.position.y < 2) {
         m.alive = false;
         m.mesh.visible = false;
-        if (tgt.p.hp <= 0) {
-          tgt.p.mesh.visible = false;
-          triggerFlash(0xff0000, 0.5);
+        spawnExplosion(m.mesh.position.clone(), true);
+        RetroAudio.playDamage();
+        triggerFlash(0xff2200, 0.3);
+
+        if (tp.hp > 0) {
+          tp.hp -= 1;
+          if (tp.hp <= 0) {
+            tp.mesh.visible = false;
+            triggerFlash(0xff0000, 0.55);
+          }
         }
         if (alivePlants().length === 0) outcome = "lost";
-      }
-
-      if (m.mesh.position.y < 0.5) {
-        m.alive = false;
-        m.mesh.visible = false;
+        continue;
       }
     }
 
@@ -733,12 +702,11 @@ export function createInterceptGame(): InterceptAPI {
     tickExplosions(dt);
     tickFlash(dt);
 
-    // Win: all waves spawned + no live missiles + timer expired,
-    // OR simply timer expired with plants alive
+    // Win: all waves cleared + no live missiles, OR 90s timer expires
     const noLiveMissiles = !missiles.some((m) => m.alive);
     if (allWavesSpawned && noLiveMissiles && alivePlants().length > 0) {
       outcome = "won";
-    } else if (timeMs >= WIN_SURVIVE_MS && alivePlants().length > 0) {
+    } else if (timeMs >= 90_000 && alivePlants().length > 0) {
       outcome = "won";
     }
 
@@ -804,7 +772,6 @@ export function createInterceptGame(): InterceptAPI {
     banner = null;
     bannerTimer = 0;
     surgeFired = false;
-    waveKindAcc = 0;
     flashMat.opacity = 0;
     flashTimer = 0;
     for (const p of plants) {
