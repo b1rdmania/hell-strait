@@ -102,24 +102,11 @@ export function createInterceptGame(): InterceptAPI {
   const textureLoader = new THREE.TextureLoader();
   const camDir = new THREE.Vector3();
 
-  // Background — warm procedural sunset; Stability gulf plate replaces when present.
+  // Background — procedural warm sunset (Stability outputs were unreliable).
   const bgMat = new THREE.MeshBasicMaterial({
     map: makeGulfSkyBackdropTexture(),
     color: 0xffffff,
   });
-  textureLoader.load(
-    "/generated/gulf-bg.png",
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.magFilter = THREE.NearestFilter;
-      tex.minFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      bgMat.map = tex;
-      bgMat.needsUpdate = true;
-    },
-    undefined,
-    () => {},
-  );
   const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(160, 90), bgMat);
   bgPlane.position.set(0, 16, -12);
   scene.add(bgPlane);
