@@ -2,7 +2,7 @@ import * as THREE from "three";
 import meridianPalette from "../palettes/meridian.json";
 
 /** Local-space point where SAM / interceptor volleys originate (flight deck, forward). */
-export const CARRIER_FIRE_LOCAL = new THREE.Vector3(0, 3.8, 4);
+export const CARRIER_FIRE_LOCAL = new THREE.Vector3(0, 3.6, 5);
 
 const P = meridianPalette.colors as string[];
 
@@ -66,7 +66,7 @@ export function buildAircraftCarrier(
   textureLoader: THREE.TextureLoader,
 ): CarrierBuild {
   const group = new THREE.Group();
-  group.position.set(0, 0, 16);
+  group.position.set(0, 0, 0);
 
   // Main hull — narrower than before so it doesn't dominate the frame
   const hull = new THREE.Mesh(
