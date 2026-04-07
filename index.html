@@ -56,16 +56,21 @@
       .screen[hidden] { display: none !important; }
       .screen.is-leaving { opacity: 0; pointer-events: none; }
 
-      /* Copper separator bar */
+      /* Copper separator bar — hard-banded, no smooth gradient */
       .copper {
         height: 3px;
         flex-shrink: 0;
-        background: linear-gradient(90deg, #6a4800, #c9a227 20%, #ffe080 50%, #c9a227 80%, #6a4800);
+        background: linear-gradient(90deg,
+          #3d2808 0%,   #3d2808 10%,
+          #c9a227 10%,  #c9a227 45%,
+          #ffe080 45%,  #ffe080 55%,
+          #c9a227 55%,  #c9a227 90%,
+          #3d2808 90%,  #3d2808 100%);
       }
       .copper-thin {
         height: 1px;
         flex-shrink: 0;
-        background: linear-gradient(90deg, transparent, #c9a227 20%, #ffe080 50%, #c9a227 80%, transparent);
+        background: #c9a227;
         opacity: 0.45;
       }
 
@@ -79,22 +84,16 @@
         position: relative;
         overflow: hidden;
       }
-      .ts-art::after {
-        content: '';
-        position: absolute;
-        inset: 0;
-        background: repeating-linear-gradient(
-          0deg,
-          rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px,
-          transparent 1px, transparent 3px
-        );
-        pointer-events: none;
-      }
       .ts-art-inner {
         position: absolute;
         bottom: 0; left: 0; right: 0;
         padding: 12px 24px 0;
-        background: linear-gradient(transparent, rgba(0,0,0,0.72) 60%);
+        background: linear-gradient(
+          transparent 0%,     transparent 35%,
+          rgba(0,0,0,0.35) 35%, rgba(0,0,0,0.35) 55%,
+          rgba(0,0,0,0.65) 55%, rgba(0,0,0,0.65) 75%,
+          #000 75%,           #000 100%
+        );
       }
       .ts-eyebrow {
         font-size: clamp(14px, 2.5vw, 20px);
@@ -110,7 +109,7 @@
         letter-spacing: 0.07em;
         text-transform: uppercase;
         line-height: 1;
-        text-shadow: 0 0 40px rgba(201,162,39,0.5), 0 2px 0 #6a5010;
+        text-shadow: 1px 2px 0 #1a0c00;
       }
       .ts-sub {
         font-size: clamp(14px, 2.5vw, 22px);
@@ -202,7 +201,7 @@
         color: #f0e4c8;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        text-shadow: 0 0 24px rgba(201,162,39,0.4);
+        text-shadow: 1px 2px 0 #1a0c00;
         line-height: 1.1;
       }
       .br-sub {
@@ -362,7 +361,7 @@
         font-size: 20px;
         color: #d94a2a;
         letter-spacing: 0.15em;
-        text-shadow: 0 0 12px rgba(217,74,42,0.6);
+        text-shadow: 1px 1px 0 #5a0a00;
         opacity: 0;
         transition: opacity 0.15s ease;
       }
