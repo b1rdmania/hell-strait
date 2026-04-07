@@ -102,24 +102,11 @@ export function createInterceptGame(): InterceptAPI {
   const textureLoader = new THREE.TextureLoader();
   const camDir = new THREE.Vector3();
 
-  // Background — procedural fallback; Stability gulf plate replaces it when present.
-  // The RetroPipeline renders at 320×256 with palette quantize, so the Stability
-  // painting naturally reads as retro low-res art.
-  const bgFallback = makeGulfSkyBackdropTexture();
-  const bgMat = new THREE.MeshBasicMaterial({ map: bgFallback, color: 0xffffff });
-  textureLoader.load(
-    "/generated/gulf-bg.png",
-    (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.magFilter = THREE.NearestFilter;
-      tex.minFilter = THREE.NearestFilter;
-      tex.generateMipmaps = false;
-      bgMat.map = tex;
-      bgMat.needsUpdate = true;
-    },
-    undefined,
-    () => {},
-  );
+  // Background — procedural Meridian sky + refinery silhouette (palette-native).
+  const bgMat = new THREE.MeshBasicMaterial({
+    map: makeGulfSkyBackdropTexture(),
+    color: 0xffffff,
+  });
   const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(160, 90), bgMat);
   bgPlane.position.set(0, 16, -12);
   scene.add(bgPlane);

@@ -207,9 +207,9 @@ function startIntercept(): void {
   interceptMode = true;
   interceptGameOver = false;
   if (usePost) {
-    pipeline.setPaletteQuantize(true);
-    pipeline.setDitherStrength(4);
-    pipeline.setScanlineStrength(0.03);
+    pipeline.setPaletteQuantize(false);
+    pipeline.setDitherStrength(0);
+    pipeline.setScanlineStrength(0);
   }
   if (introEl) introEl.hidden = true;
   if (briefingEl) briefingEl.hidden = true;
