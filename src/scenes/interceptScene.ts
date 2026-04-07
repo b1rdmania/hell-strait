@@ -92,7 +92,7 @@ export function createInterceptGame(): InterceptAPI {
   } catch { hi = 0; }
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x050a12);
+  scene.background = new THREE.Color(0x060408);
 
   // Front-on Missile Command view: from +Z toward origin, Y up
   const camera = new THREE.PerspectiveCamera(50, 320 / 256, 0.1, 220);
@@ -102,28 +102,41 @@ export function createInterceptGame(): InterceptAPI {
   const textureLoader = new THREE.TextureLoader();
   const camDir = new THREE.Vector3();
 
-  // Background — procedural Meridian sky + refinery silhouette (palette-native).
+  // Background — warm procedural sunset; Stability gulf plate replaces when present.
   const bgMat = new THREE.MeshBasicMaterial({
     map: makeGulfSkyBackdropTexture(),
     color: 0xffffff,
   });
+  textureLoader.load(
+    "/generated/gulf-bg.png",
+    (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
+      bgMat.map = tex;
+      bgMat.needsUpdate = true;
+    },
+    undefined,
+    () => {},
+  );
   const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(160, 90), bgMat);
   bgPlane.position.set(0, 16, -12);
   scene.add(bgPlane);
 
-  // Ground (horizontal XZ, y = 0)
+  // Ground — warm dark earth tone (sunset lighting)
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(140, 36),
-    new THREE.MeshBasicMaterial({ color: c(P[3]!) }),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color("#100c08") }),
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(0, 0, 0);
   scene.add(ground);
 
-  // Water strip between camera and plants (shallow XZ band)
+  // Water strip — dark teal with warm undertone
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(140, 14),
-    new THREE.MeshBasicMaterial({ color: c(P[2]!) }),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color("#0a1418") }),
   );
   water.rotation.x = -Math.PI / 2;
   water.position.set(0, 0.03, 6);
@@ -144,34 +157,34 @@ export function createInterceptGame(): InterceptAPI {
 
   const plants: Plant[] = [];
   const plantXs = [-22, -11, 0, 11, 22];
+  const tankMat = new THREE.MeshBasicMaterial({ color: new THREE.Color("#1c1814") });
+  const towerMat = new THREE.MeshBasicMaterial({ color: new THREE.Color("#28221c") });
+  const lightMat = new THREE.MeshBasicMaterial({ color: new THREE.Color("#e06020") });
   for (const x of plantXs) {
     const g = new THREE.Group();
     g.position.set(x, PLANT_Y, 0);
-    const oil = new THREE.Mesh(
-      new THREE.BoxGeometry(4, 2.2, 3),
-      new THREE.MeshBasicMaterial({ color: c(P[1]!) }),
-    );
-    oil.position.y = 1.1;
+    const oil = new THREE.Mesh(new THREE.BoxGeometry(4.5, 2.4, 3), tankMat);
+    oil.position.y = 1.2;
     g.add(oil);
-    const desal = new THREE.Mesh(
-      new THREE.BoxGeometry(2.8, 3, 2.2),
-      new THREE.MeshBasicMaterial({ color: c(P[4]!) }),
-    );
-    desal.position.set(2.2, 1.6, 0.5);
+    const desal = new THREE.Mesh(new THREE.BoxGeometry(2.8, 3.6, 2.2), towerMat);
+    desal.position.set(2.2, 1.8, 0.5);
     g.add(desal);
-    const blue = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.8, 1),
-      new THREE.MeshBasicMaterial({ color: c(P[12]!) }),
+    const light = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), lightMat);
+    light.position.set(2.2, 3.8, 0.5);
+    g.add(light);
+    const chimney = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, 2.5, 0.5),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color("#141210") }),
     );
-    blue.position.set(2.2, 3.2, 0.5);
-    g.add(blue);
+    chimney.position.set(-1.5, 2.8, 0);
+    g.add(chimney);
     scene.add(g);
     plants.push({ mesh: g, x, hp: PLANT_HP });
   }
 
   const carrier = buildAircraftCarrier(scene, textureLoader);
-  carrier.group.scale.set(0.55, 0.55, 0.55);
-  carrier.group.position.set(0, 0.5, 4);
+  carrier.group.scale.set(0.45, 0.45, 0.45);
+  carrier.group.position.set(0, 0.3, 5);
 
   const inboundTex = makeInboundSpriteTexture();
   const interceptorTex = makeInterceptorSpriteTexture();
