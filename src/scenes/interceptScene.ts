@@ -102,23 +102,18 @@ export function createInterceptGame(): InterceptAPI {
   const textureLoader = new THREE.TextureLoader();
   const camDir = new THREE.Vector3();
 
-  function applyNearestGenerated(tex: THREE.Texture): void {
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.magFilter = THREE.NearestFilter;
-    tex.minFilter = THREE.NearestFilter;
-    tex.generateMipmaps = false;
-  }
-
-  // Background — procedural; optional Stability gulf plate
-  const bgTex = makeGulfSkyBackdropTexture();
-  const bgMat = new THREE.MeshBasicMaterial({
-    map: bgTex,
-    color: 0xffffff,
-  });
+  // Background — procedural fallback; Stability gulf plate replaces it when present.
+  // The RetroPipeline renders at 320×256 with palette quantize, so the Stability
+  // painting naturally reads as retro low-res art.
+  const bgFallback = makeGulfSkyBackdropTexture();
+  const bgMat = new THREE.MeshBasicMaterial({ map: bgFallback, color: 0xffffff });
   textureLoader.load(
     "/generated/gulf-bg.png",
     (tex) => {
-      applyNearestGenerated(tex);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+      tex.generateMipmaps = false;
       bgMat.map = tex;
       bgMat.needsUpdate = true;
     },
@@ -187,9 +182,7 @@ export function createInterceptGame(): InterceptAPI {
     plants.push({ mesh: g, x, hp: PLANT_HP });
   }
 
-  const carrier = buildAircraftCarrier(scene, textureLoader, {
-    deckImageUrl: "/generated/carrier-cinemaware.png",
-  });
+  const carrier = buildAircraftCarrier(scene, textureLoader);
   carrier.group.scale.set(0.55, 0.55, 0.55);
   carrier.group.position.set(0, 0.5, 4);
 
@@ -213,27 +206,6 @@ export function createInterceptGame(): InterceptAPI {
     fog: false,
     alphaTest: 0.01,
   });
-
-  textureLoader.load(
-    "/generated/missile-inbound.png",
-    (tex) => {
-      applyNearestGenerated(tex);
-      inboundMat.map = tex;
-      inboundMat.needsUpdate = true;
-    },
-    undefined,
-    () => {},
-  );
-  textureLoader.load(
-    "/generated/missile-interceptor.png",
-    (tex) => {
-      applyNearestGenerated(tex);
-      interceptorMat.map = tex;
-      interceptorMat.needsUpdate = true;
-    },
-    undefined,
-    () => {},
-  );
 
   const ciwsTex = (() => {
     const cv = document.createElement("canvas");

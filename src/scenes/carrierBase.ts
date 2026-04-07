@@ -57,21 +57,13 @@ export type CarrierBuild = {
   getFireWorldPosition: () => THREE.Vector3;
 };
 
-function applyNearestImageTexture(tex: THREE.Texture): void {
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.minFilter = THREE.NearestFilter;
-  tex.magFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-}
-
 /**
  * Big Nimitz-class style carrier: long hull, full deck, island — Cinemaware read at low internal res.
- * Deck uses procedural Meridian canvas; optional Stability `carrier-cinemaware.png` replaces it when loaded.
+ * Deck uses procedural Meridian canvas (matches the front-on camera angle).
  */
 export function buildAircraftCarrier(
   scene: THREE.Scene,
-  textureLoader: THREE.TextureLoader,
-  opts?: { deckImageUrl?: string },
+  _textureLoader: THREE.TextureLoader,
 ): CarrierBuild {
   const group = new THREE.Group();
   group.position.set(0, 0, 0);
@@ -102,23 +94,10 @@ export function buildAircraftCarrier(
   group.add(bow);
 
   const deckGeo = new THREE.PlaneGeometry(44, 18);
-  const deckFallback = makeCinemawareDeckCanvasTexture();
   const deckMat = new THREE.MeshBasicMaterial({
     color: new THREE.Color(0xffffff),
-    map: deckFallback,
+    map: makeCinemawareDeckCanvasTexture(),
   });
-  if (opts?.deckImageUrl) {
-    textureLoader.load(
-      opts.deckImageUrl,
-      (tex) => {
-        applyNearestImageTexture(tex);
-        deckMat.map = tex;
-        deckMat.needsUpdate = true;
-      },
-      undefined,
-      () => {},
-    );
-  }
   const deck = new THREE.Mesh(deckGeo, deckMat);
   deck.rotation.x = -Math.PI / 2;
   deck.position.set(0, 3.1, 0);
