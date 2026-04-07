@@ -127,7 +127,7 @@ function initGulfHud(): void {
 function updateGulfHud(state: InterceptState, dt: number): void {
   if (ghScore) ghScore.textContent = `${state.score}`;
   if (ghTime) ghTime.textContent = `${state.timeRemaining}s`;
-  if (ghWave) ghWave.textContent = `W${state.wave}`;
+  if (ghWave) ghWave.textContent = `W${state.wave}/${state.totalWaves}`;
   if (ghHi) ghHi.textContent = `HI ${state.hi}`;
   if (ghInterceptors) ghInterceptors.textContent = `SM-3 ×${state.interceptors}`;
 
@@ -177,8 +177,8 @@ function showGulfGameOver(state: InterceptState): void {
 
   const hiLine = state.score >= state.hi ? " ★ NEW HI" : `  HI ${state.hi}`;
   const body = won
-    ? `${state.plants} plants defended · wave ${state.wave}\nSCORE  ${state.score}${hiLine}`
-    : `${90 - state.timeRemaining}s survived · wave ${state.wave}\nSCORE  ${state.score}${hiLine}`;
+    ? `${state.plants} plants defended · wave ${state.wave}/${state.totalWaves}\nSCORE  ${state.score}${hiLine}`
+    : `${90 - state.timeRemaining}s survived · wave ${state.wave}/${state.totalWaves}\nSCORE  ${state.score}${hiLine}`;
   goBody.textContent = body;
 
   gulfGameOver.classList.add("is-active");
@@ -216,7 +216,7 @@ function startIntercept(): void {
   if (gulfBriefEl) gulfBriefEl.hidden = true;
   gulfHud?.classList.add("is-active");
   initGulfHud();
-  setHint("click to launch interceptors · ESC — menu");
+  setHint("CLICK — SM-3 interceptor · SPACE — CIWS · ESC — menu");
 }
 
 function stopIntercept(): void {
@@ -278,10 +278,22 @@ function unlockOnce(): void {
 window.addEventListener("pointerdown", unlockOnce, { once: true, passive: true });
 window.addEventListener("keydown", unlockOnce, { once: true });
 
-// Gulf SDI — pointer on Three canvas
+// Gulf SDI — pointer on Three canvas (SM-3)
 renderer.domElement.addEventListener("pointerdown", (e) => {
   if (!interceptMode || interceptGameOver) return;
   intercept.onPointerDown(e, renderer.domElement);
+});
+
+// Gulf SDI — SPACE key for CIWS (held = rapid fire)
+const ciwsKeys = new Set<string>();
+window.addEventListener("keydown", (e) => {
+  if (e.key === " " && interceptMode && !interceptGameOver) {
+    e.preventDefault();
+    ciwsKeys.add(e.key);
+  }
+});
+window.addEventListener("keyup", (e) => {
+  ciwsKeys.delete(e.key);
 });
 
 // ---------------------------------------------------------------------------
@@ -429,6 +441,7 @@ function tick(): void {
   }
 
   if (interceptMode) {
+    if (ciwsKeys.has(" ")) intercept.fireCiws();
     const state = intercept.update(dt);
     updateGulfHud(state, dt);
 
