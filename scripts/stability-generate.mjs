@@ -6,25 +6,36 @@
  *   npm run generate:art -- "your prompt here"
  *   npm run generate:art -- --name=meridian-deck "prompt..."
  *   npm run generate:art -- --name=sprites --aspect=1:1 "prompt..."
+ *   npm run generate:art -- --out=images/title-art.png --aspect=16:9 "prompt..."
  *   npm run generate:art   # default strait title prompt
  *
- * Prompt ideas for Hell Strait (Amiga × Cinemaware × Bitmap):
- *   Title / sky plate — sunset strait, tanker silhouettes, dramatic clouds, limited palette feel,
- *     no readable text, no modern HDR, no depth-of-field, oil painting meets 320×200 dither.
- *   Meridian deck — dark chrome UI, fake CRT meters, gold trim, cold blue backlight, empty panels.
- *   Ashar brief — parchment war map, red marker strokes, torchlight, serious not fantasy cartoon.
- *   Sprites — isolated drone + boat on flat background for cutout (then index-colour in Aseprite).
- *   Strait / hub plates — npm run generate:bg-strait | generate:command-deck (default strait prompt).
- *   Gulf SDI — npm run generate:gulf-bg | generate:carrier | generate:missile-inbound |
- *     generate:missile-interceptor, or npm run generate:all-stability for every preset.
- *   Outputs land in public/generated/; Gulf SDI loads PNGs when present and keeps procedural fallback.
+ * Swim game image shortcuts (see IMAGES.md for all prompts):
+ *   npm run generate:title-art      → images/title-art.png
+ *   npm run generate:scene-border   → images/scene-border.png
+ *   npm run generate:scene-hamid    → images/scene-hamid.png
+ *   npm run generate:scene-boat     → images/scene-boat.png
+ *   npm run generate:win-art        → images/win-art.png
+ *   npm run generate:lose-art       → images/lose-art.png
+ *   npm run generate:sprite-player  → images/sprite-player.png
+ *   npm run generate:sprite-drone   → images/sprite-drone.png
+ *   npm run generate:sprite-boat    → images/sprite-boat.png
+ *   npm run generate:sprite-zyn     → images/sprite-zyn.png
+ *   npm run generate:sprite-cigar   → images/sprite-cigar.png
+ *   npm run generate:sprite-coastguard → images/sprite-coastguard.png
+ *   npm run generate:all            → all of the above
+ *   npm run generate:screens        → screen backgrounds only
+ *   npm run generate:sprites        → sprites only
+ *
+ * IMPORTANT: Each npm run generate:* command only passes the --out flag.
+ * You MUST also pass the prompt from IMAGES.md as a final argument:
+ *   npm run generate:title-art -- "Amiga Cinemaware 1989 game title screen..."
  *
  * Never commit API keys — use .env only (see .env.example).
  */
 import "dotenv/config";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -71,12 +82,15 @@ const PRESET_GULF_BG = [
 
 function parseArgs(argv) {
   let name = null;
+  let out = null;   // --out=images/title-art.png (full relative path)
   let aspect = "16:9";
   let preset = null;
   const rest = [];
   for (const a of argv) {
     if (a.startsWith("--name=")) {
       name = a.slice(7).replace(/[^a-z0-9-_]/gi, "-");
+    } else if (a.startsWith("--out=")) {
+      out = a.slice(6).trim();
     } else if (a.startsWith("--aspect=")) {
       aspect = a.slice(9).trim() || "16:9";
     } else if (a.startsWith("--preset=")) {
@@ -85,7 +99,7 @@ function parseArgs(argv) {
       rest.push(a);
     }
   }
-  return { name, aspect, preset, rest };
+  return { name, out, aspect, preset, rest };
 }
 
 async function main() {
@@ -95,7 +109,7 @@ async function main() {
     process.exit(1);
   }
 
-  const { name, aspect, preset, rest } = parseArgs(process.argv.slice(2));
+  const { name, out, aspect, preset, rest } = parseArgs(process.argv.slice(2));
   const userPrompt = rest.join(" ").trim();
   let prompt = userPrompt;
   if (!prompt && preset === "carrier") {
@@ -112,7 +126,15 @@ async function main() {
   }
   if (!prompt) prompt = DEFAULT_PROMPT;
 
-  mkdirSync(outDir, { recursive: true });
+  // Resolve output path: --out takes priority over --name, both fall back to public/generated/
+  let resolvedOutPath;
+  if (out) {
+    resolvedOutPath = join(root, out);
+  } else {
+    const base = name || `strait-${Date.now()}`;
+    resolvedOutPath = join(outDir, `${base}.png`);
+  }
+  mkdirSync(dirname(resolvedOutPath), { recursive: true });
 
   const form = new FormData();
   form.append("prompt", prompt);
@@ -130,9 +152,6 @@ async function main() {
     body: form,
   });
 
-  const base = name || `strait-${Date.now()}`;
-  const outPath = join(outDir, `${base}.png`);
-
   if (!res.ok) {
     const errText = await res.text();
     console.error(`Stability API ${res.status}:`, errText);
@@ -140,8 +159,8 @@ async function main() {
   }
 
   const buf = Buffer.from(await res.arrayBuffer());
-  writeFileSync(outPath, buf);
-  console.log("Wrote", outPath, `(${buf.length} bytes)`);
+  writeFileSync(resolvedOutPath, buf);
+  console.log("Wrote", resolvedOutPath, `(${buf.length} bytes)`);
 }
 
 main().catch((e) => {
