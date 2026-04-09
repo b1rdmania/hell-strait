@@ -1,636 +1,1087 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Hell Strait — defend the convoy through a contested strait. Amiga-era PAL game in the browser." />
-    <meta name="theme-color" content="#000000" />
-    <title>Hell Strait</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Libre+Baskerville:wght@700&display=swap" rel="stylesheet" />
-    <style>
-      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HELL STRAIT</title>
+  <style>
+    /* ===== AMIGA / CINEMAWARE AESTHETIC ===== */
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
-      html, body {
-        height: 100%;
-        background: #000;
-        overflow: hidden;
-        font-family: 'VT323', monospace;
-      }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-      /* ── Three.js canvas ────────────────────────────────────── */
-      #three-canvas {
-        position: fixed;
-        inset: 0;
-        display: block;
-        width: 100%;
-        height: 100%;
-        z-index: 0;
-      }
+    :root {
+      --amiga-black:    #000000;
+      --amiga-white:    #FFFFFF;
+      --amiga-orange:   #FF8800;
+      --amiga-blue:     #0055AA;
+      --amiga-cyan:     #00AACC;
+      --amiga-red:      #CC0000;
+      --amiga-yellow:   #FFDD00;
+      --amiga-green:    #00AA44;
+      --amiga-gray:     #AAAAAA;
+      --amiga-darkgray: #444444;
+    }
 
-      /* ── Phaser game container ──────────────────────────────── */
-      #game-root {
-        position: fixed;
-        inset: 0;
-        z-index: 12;
-        display: none;
-      }
-      #game-root.is-active { display: block; }
-      #game-root canvas {
-        image-rendering: pixelated;
-        image-rendering: crisp-edges;
-      }
-      body.mode-game #three-canvas { visibility: hidden; pointer-events: none; }
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--amiga-black);
+      font-family: 'Press Start 2P', monospace;
+      color: var(--amiga-white);
+      overflow: hidden;
+      image-rendering: pixelated;
+    }
 
-      /* ── Shared overlay base ────────────────────────────────── */
-      .screen {
-        position: fixed;
-        inset: 0;
-        z-index: 20;
-        display: flex;
-        flex-direction: column;
-        background: #000;
-        transition: opacity 0.4s ease;
-      }
-      .screen[hidden] { display: none !important; }
-      .screen.is-leaving { opacity: 0; pointer-events: none; }
+    /* ===== GAME CONTAINER — 640×400 Amiga OCS viewport ===== */
+    #game-container {
+      width: 640px;
+      height: 400px;
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: var(--amiga-black);
+      border: 2px solid var(--amiga-gray);
+      overflow: hidden;
+    }
 
-      /* Copper separator bar — hard-banded, no smooth gradient */
-      .copper {
-        height: 3px;
-        flex-shrink: 0;
-        background: linear-gradient(90deg,
-          #3d2808 0%,   #3d2808 10%,
-          #c9a227 10%,  #c9a227 45%,
-          #ffe080 45%,  #ffe080 55%,
-          #c9a227 55%,  #c9a227 90%,
-          #3d2808 90%,  #3d2808 100%);
-      }
-      .copper-thin {
-        height: 1px;
-        flex-shrink: 0;
-        background: #c9a227;
-        opacity: 0.45;
-      }
+    /* ===== SCREENS ===== */
+    .screen {
+      display: none;
+      width: 100%; height: 100%;
+      position: absolute;
+      top: 0; left: 0;
+    }
+    .screen.active { display: block; }
 
-      /* ── TITLE SCREEN ───────────────────────────────────────── */
+    /* ===== BLINK ===== */
+    .blink { animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
 
-      /* Painted artwork — fills top portion */
-      .ts-art {
-        flex: 1 1 auto;
-        min-height: 0;
-        background: url('/generated/command-deck.png') center 40% / cover no-repeat;
-        position: relative;
-        overflow: hidden;
-      }
-      .ts-art-inner {
-        position: absolute;
-        bottom: 0; left: 0; right: 0;
-        padding: 12px 24px 0;
-        background: linear-gradient(
-          transparent 0%,     transparent 35%,
-          rgba(0,0,0,0.35) 35%, rgba(0,0,0,0.35) 55%,
-          rgba(0,0,0,0.65) 55%, rgba(0,0,0,0.65) 75%,
-          #000 75%,           #000 100%
-        );
-      }
-      .ts-eyebrow {
-        font-size: clamp(14px, 2.5vw, 20px);
-        color: #c9a227;
-        letter-spacing: 0.35em;
-        text-transform: uppercase;
-      }
-      .ts-title {
-        font-family: 'Libre Baskerville', Georgia, serif;
-        font-size: clamp(2.4rem, 8vw, 5rem);
-        font-weight: 700;
-        color: #f0e4c8;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
-        line-height: 1;
-        text-shadow: 1px 2px 0 #1a0c00;
-      }
-      .ts-sub {
-        font-size: clamp(14px, 2.5vw, 22px);
-        color: rgba(200,180,150,0.75);
-        letter-spacing: 0.15em;
-        padding-bottom: 12px;
-      }
+    /* =====================================================================
+       TITLE SCREEN
+       Image slot: images/title-art.png
+    ===================================================================== */
+    #screen-title { background: var(--amiga-black); }
 
-      .ts-menu {
-        flex: 0 0 auto;
-        background: #000;
-        padding: 14px 24px 10px;
-      }
-      .ts-menu-items {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        margin-bottom: 10px;
-      }
-      .ts-menu-items button {
-        display: flex;
-        align-items: baseline;
-        gap: 16px;
-        background: none;
-        border: none;
-        cursor: pointer;
-        padding: 6px 0;
-        text-align: left;
-        width: 100%;
-        border-bottom: 1px solid rgba(201,162,39,0.15);
-      }
-      .ts-menu-items button:last-child { border-bottom: none; }
-      .ts-key {
-        font-size: clamp(18px, 3vw, 26px);
-        color: #c9a227;
-        width: 2ch;
-        flex-shrink: 0;
-      }
-      .ts-label {
-        font-size: clamp(18px, 3vw, 26px);
-        color: #e8dcc4;
-        letter-spacing: 0.06em;
-      }
-      .ts-menu-items button:hover .ts-label,
-      .ts-menu-items button:focus-visible .ts-label { color: #fff; }
-      .ts-menu-items button:hover .ts-key,
-      .ts-menu-items button:focus-visible .ts-key { color: #ffe080; }
-      .ts-menu-items button:focus-visible { outline: none; }
+    #title-art {
+      width: 100%;
+      height: 240px;
+      position: relative;
+      overflow: hidden;
 
-      .ts-ticker {
-        border-top: 1px solid rgba(201,162,39,0.3);
-        padding-top: 8px;
-        overflow: hidden;
-        white-space: nowrap;
-      }
-      .ts-ticker-inner {
-        display: inline-block;
-        font-size: clamp(13px, 2vw, 18px);
-        color: #5a6a7a;
-        animation: ticker 32s linear infinite;
-        letter-spacing: 0.08em;
-      }
-      @keyframes ticker {
-        from { transform: translateX(100vw); }
-        to   { transform: translateX(-100%); }
-      }
+      /* ─── LOAD REAL IMAGE WHEN AVAILABLE ─────────────────────────────
+         Replace placeholder gradient with Stability AI output:
+         File: images/title-art.png  (640 × 240)
 
-      /* ── BRIEFING SCREEN ────────────────────────────────────── */
+         Stability AI prompt:
+         "Amiga Cinemaware 1989 game title screen, dramatic pixel art,
+          dark Strait of Hormuz at night, massive oil tanker silhouette,
+          Iranian coastline jagged low hills, Shahed drones as specks in sky,
+          lone figure in tiny speedboat smoking a cigar, moonlight glimmer
+          on water, orange-red horizon glow, limited 32-colour palette,
+          chunky pixels, retro game aesthetic, no modern HDR, no text"
 
-      #briefing {
-        background: #000;
-      }
+         Negative: text, watermark, modern CGI, photorealistic, bokeh
+         Aspect: 16:9 (crop to 640×240 top section)
+      ─────────────────────────────────────────────────────────────────── */
+      background:
+        url('./images/title-art.png') center/cover no-repeat,
+        linear-gradient(180deg, #000033 0%, #001166 40%, #001a44 60%, #001100 100%);
+    }
 
-      .br-header {
-        flex: 0 0 auto;
-        padding: 12px 24px 10px;
-        background: #000;
-      }
-      .br-classify {
-        font-size: clamp(11px, 1.8vw, 15px);
-        color: #c9a227;
-        letter-spacing: 0.3em;
-        margin-bottom: 4px;
-      }
-      .br-title {
-        font-family: 'Libre Baskerville', Georgia, serif;
-        font-size: clamp(1.4rem, 4vw, 2.4rem);
-        font-weight: 700;
-        color: #f0e4c8;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        text-shadow: 1px 2px 0 #1a0c00;
-        line-height: 1.1;
-      }
-      .br-sub {
-        font-size: clamp(13px, 2vw, 18px);
-        color: rgba(196,140,88,0.8);
-        letter-spacing: 0.2em;
-        margin-top: 2px;
-      }
+    #title-art .img-placeholder {
+      display: none; /* hidden when real image loads */
+    }
+    #title-art:not([data-loaded]) .img-placeholder {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 8px;
+    }
+    #title-art .img-placeholder::before {
+      content: "[ images/title-art.png ]";
+      font-size: 7px;
+      color: var(--amiga-darkgray);
+    }
+    #title-art .img-placeholder::after {
+      content: "640\00d7240 · Stability AI · Hormuz at night, tanker, cigar, drones";
+      font-size: 6px;
+      color: var(--amiga-darkgray);
+      text-align: center;
+      padding: 0 20px;
+    }
 
-      .br-body {
-        flex: 1 1 auto;
-        overflow: auto;
-        padding: 12px 24px;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 12px 28px;
-      }
+    .title-ui {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 12px;
+      background: var(--amiga-black);
+      text-align: center;
+    }
 
-      .br-section h3 {
-        font-size: clamp(14px, 2.2vw, 20px);
-        color: #c9a227;
-        letter-spacing: 0.25em;
-        text-transform: uppercase;
-        margin-bottom: 6px;
-        border-bottom: 1px solid rgba(201,162,39,0.25);
-        padding-bottom: 4px;
-      }
-      .br-section p,
-      .br-section li {
-        font-size: clamp(14px, 2.2vw, 19px);
-        color: #c8baa0;
-        line-height: 1.5;
-        list-style: none;
-      }
-      .br-section li { padding: 1px 0; }
-      .br-section li.threat-head {
-        color: #e8c898;
-        margin-top: 6px;
-      }
-      .br-section li.threat-head::before {
-        content: '▸ ';
-        color: #d94a2a;
-      }
-      .br-section li.threat-stat {
-        color: #8b5a38;
-        padding-left: 14px;
-        font-size: clamp(12px, 1.9vw, 17px);
-      }
-      .br-section li.key-line { color: #e8c898; }
-      .br-section li.key-line .kbd {
-        display: inline-block;
-        color: #c9a227;
-        min-width: 7ch;
-      }
+    .title-logo {
+      font-size: 22px;
+      color: var(--amiga-orange);
+      text-shadow: 3px 3px 0 #882200, -1px -1px 0 #ffaa00;
+      letter-spacing: 4px;
+      margin-bottom: 4px;
+    }
 
-      .br-footer {
-        flex: 0 0 auto;
-        padding: 10px 24px 12px;
-        background: #000;
-        display: flex;
-        gap: 20px;
-        align-items: center;
-      }
-      .br-footer button {
-        background: none;
-        border: 1px solid rgba(201,162,39,0.35);
-        cursor: pointer;
-        padding: 6px 18px;
-        display: flex;
-        align-items: baseline;
-        gap: 10px;
-      }
-      .br-footer button:hover,
-      .br-footer button:focus-visible { border-color: #c9a227; outline: none; }
-      .br-footer button:hover .ts-label,
-      .br-footer button:focus-visible .ts-label { color: #fff; }
-      .br-footer button:hover .ts-key,
-      .br-footer button:focus-visible .ts-key { color: #ffe080; }
-      .br-footer .divider {
-        color: rgba(201,162,39,0.4);
-        font-size: clamp(18px, 3vw, 26px);
-      }
+    .title-sub {
+      font-size: 7px;
+      color: var(--amiga-cyan);
+      margin-bottom: 12px;
+      letter-spacing: 2px;
+    }
 
-      /* ── Gulf SDI carrier selection ─────────────────────────── */
-      li.gulf-carrier {
-        cursor: pointer;
-        user-select: none;
-        transition: color 0.12s;
-      }
-      li.gulf-carrier:hover { color: #e8c898; }
-      li.gulf-carrier.selected { color: #ffe080 !important; }
-      li.gulf-carrier.selected::before { color: #ffe080 !important; }
+    .title-press { font-size: 8px; color: var(--amiga-yellow); }
+    .title-credit { font-size: 6px; color: var(--amiga-gray); margin-top: 6px; }
 
-      /* ── Hint bar ───────────────────────────────────────────── */
-      #hint {
-        position: fixed;
-        bottom: 8px; left: 10px;
-        z-index: 30;
-        font-size: 13px;
-        color: #3a4a5a;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-      }
-      #hint.is-visible { opacity: 1; }
+    /* =====================================================================
+       CUTSCENE SCREEN
+    ===================================================================== */
+    #screen-cutscene { background: var(--amiga-black); }
 
-      /* ── Gulf SDI HUD ───────────────────────────────────────── */
-      #gulf-hud {
-        position: fixed;
-        inset: 0;
-        z-index: 25;
-        pointer-events: none;
-        font-family: 'VT323', monospace;
-        display: none;
-      }
-      #gulf-hud.is-active { display: block; }
+    .cutscene-frame {
+      display: none;
+      width: 100%; height: 100%;
+    }
+    .cutscene-frame.active { display: flex; flex-direction: column; }
 
-      .gh-top {
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 28px;
-        background: rgba(0,0,0,0.55);
-        display: flex;
-        align-items: center;
-        padding: 0 8px;
-        gap: 8px;
-      }
-      .gh-time   { color: #e8eef2; font-size: 16px; flex: 1; text-align: center; }
-      .gh-score  { color: #c9a227; font-size: 16px; }
-      .gh-wave   { color: #8a9ba8; font-size: 16px; }
+    .cutscene-image {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 6px;
+    }
 
-      .gh-plants {
-        position: absolute;
-        bottom: 32px; left: 8px;
-        display: flex;
-        gap: 4px;
-      }
-      .gh-plant {
-        width: 10px; height: 14px;
-        background: #7cfcb4;
-        border: 1px solid rgba(0,0,0,0.4);
-      }
-      .gh-plant.dead { background: #3a1010; border-color: #5a1010; }
+    /* Shared placeholder label style */
+    .cutscene-image::before {
+      font-size: 7px;
+      color: rgba(255,255,255,0.25);
+      position: relative; z-index: 1;
+    }
+    .cutscene-image::after {
+      font-size: 6px;
+      color: rgba(255,255,255,0.18);
+      text-align: center;
+      padding: 0 20px;
+      position: relative; z-index: 1;
+    }
 
-      .gh-interceptors {
-        position: absolute;
-        bottom: 32px; right: 8px;
-        color: #e6c84a;
-        font-size: 14px;
-      }
+    /* ─── SCENE 1 & 2: OMANI BORDER CROSSING ─────────────────────────
+       File: images/scene-border.png  (640 × 280)
 
-      .gh-banner {
-        position: absolute;
-        top: 36px; left: 0; right: 0;
-        text-align: center;
-        font-family: 'VT323', monospace;
-        font-size: 20px;
-        color: #d94a2a;
-        letter-spacing: 0.15em;
-        text-shadow: 1px 1px 0 #5a0a00;
-        opacity: 0;
-        transition: opacity 0.15s ease;
-      }
-      .gh-banner.show { opacity: 1; }
+       Stability AI prompt:
+       "Amiga pixel art 1989 Cinemaware style, desert border checkpoint at
+        early dawn, Omani guard in white dishdasha and belt, holding a
+        Western passport open, suspicious squinting expression, small dusty
+        checkpoint hut, sand dunes behind, orange-pink sunrise sky,
+        limited colour palette, chunky retro game art, no text, no logos"
 
-      .gh-combo {
-        position: absolute;
-        top: 60px; left: 0; right: 0;
-        text-align: center;
-        font-size: 16px;
-        color: #ffe050;
-        opacity: 0;
-        transition: opacity 0.2s ease;
-      }
-      .gh-combo.show { opacity: 1; }
+       Negative: text, modern CGI, photorealistic, bokeh, watermark
+       Aspect: 16:9
+    ─────────────────────────────────────────────────────────────────── */
+    .cutscene-image.border-scene {
+      background:
+        url('./images/scene-border.png') center/cover no-repeat,
+        linear-gradient(180deg, #ffaa44 0%, #ff8800 30%, #cc6600 60%, #8b4513 100%);
+    }
+    .cutscene-image.border-scene::before  { content: "[ images/scene-border.png ]"; }
+    .cutscene-image.border-scene::after   { content: "640\00d7280 · Omani border checkpoint · dawn · dishdasha guard"; }
 
-      /* ── Gulf SDI Game Over ─────────────────────────────────── */
-      #gulf-gameover {
-        position: fixed;
-        inset: 0;
-        z-index: 26;
-        display: none;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0,0,0,0.65);
-        font-family: 'VT323', monospace;
-        pointer-events: auto;
-      }
-      #gulf-gameover.is-active { display: flex; }
-      .go-head {
-        font-family: 'Libre Baskerville', Georgia, serif;
-        font-size: 26px;
-        letter-spacing: 0.06em;
-        margin-bottom: 8px;
-      }
-      .go-body {
-        font-size: 20px;
-        color: #e8eef2;
-        text-align: center;
-        line-height: 1.6;
-        margin-bottom: 16px;
-        white-space: pre-line;
-      }
-      .go-controls {
-        font-size: 15px;
-        color: #8a9ba8;
-      }
-    </style>
-  </head>
-  <body>
+    /* ─── SCENE 3 & 4: HAMID AT THE DOCK ─────────────────────────────
+       File: images/scene-hamid.png  (640 × 280)
 
-    <!-- ── TITLE SCREEN ───────────────────────────────────────── -->
-    <div id="intro" class="screen" aria-label="Hell Strait title screen">
+       Stability AI prompt:
+       "Amiga pixel art 1989 Cinemaware style, Omani fisherman at a
+        rickety night canal dock, worn dark skin, rolled sleeves, pointing
+        at a battered 40-year-old dinghy speedboat tied up with rope,
+        crumpled dollar bills in one hand, moonlight reflecting off
+        dark water, minimal warm light from dock lamp, dramatic shadow,
+        limited retro palette, no text, no logos"
 
-      <div class="ts-art" aria-hidden="true">
-        <div class="ts-art-inner">
-          <p class="ts-eyebrow">Meridian Command · Strait Operations</p>
-          <h1 class="ts-title">Hell Strait</h1>
-          <p class="ts-sub">100 oil tankers · 90 seconds · intercept all threats</p>
+       Negative: text, modern CGI, photorealistic, anime, watermark
+       Aspect: 16:9
+    ─────────────────────────────────────────────────────────────────── */
+    .cutscene-image.hamid-scene {
+      background:
+        url('./images/scene-hamid.png') center/cover no-repeat,
+        linear-gradient(180deg, #001133 0%, #002244 40%, #001122 70%, #111100 100%);
+    }
+    .cutscene-image.hamid-scene::before { content: "[ images/scene-hamid.png ]"; }
+    .cutscene-image.hamid-scene::after  { content: "640\00d7280 · Hamid at night dock · dinghy · cash"; }
+
+    /* ─── SCENE 5 & 6: BOAT CROSSING / THE SWIM ──────────────────────
+       File: images/scene-boat.png  (640 × 280)
+
+       Stability AI prompt:
+       "Amiga pixel art 1989 Cinemaware side-scrolling scene, battered
+        old wooden dinghy speedboat racing across open flat ocean at
+        pre-dawn, Iranian rocky coastline silhouette in the far distance,
+        Shahed-136 drone silhouette visible in hazy orange sky overhead,
+        man at bow smoking a thick cigar, salt spray, very limited
+        32-colour palette, retro game background art, no text"
+
+       Negative: text, watermark, modern lens, photorealistic, anime
+       Aspect: 16:9
+    ─────────────────────────────────────────────────────────────────── */
+    .cutscene-image.boat-scene {
+      background:
+        url('./images/scene-boat.png') center/cover no-repeat,
+        linear-gradient(180deg, #ff6600 0%, #ff9900 20%, #ffcc44 35%, #0077bb 36%, #005599 60%, #003366 100%);
+    }
+    .cutscene-image.boat-scene::before { content: "[ images/scene-boat.png ]"; }
+    .cutscene-image.boat-scene::after  { content: "640\00d7280 · Speedboat at dawn · Shahed drone · Iranian coast"; }
+
+    .cutscene-text-box {
+      background: var(--amiga-black);
+      border-top: 2px solid var(--amiga-orange);
+      padding: 10px 14px;
+      min-height: 90px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .cutscene-speaker {
+      font-size: 7px;
+      color: var(--amiga-orange);
+      margin-bottom: 6px;
+    }
+
+    .cutscene-line {
+      font-size: 8px;
+      color: var(--amiga-white);
+      line-height: 1.6;
+    }
+
+    .cutscene-continue {
+      font-size: 7px;
+      color: var(--amiga-cyan);
+      text-align: right;
+      margin-top: 4px;
+    }
+
+    /* ===== GAME SCREEN ===== */
+    #screen-game { background: var(--amiga-black); }
+
+    #game-hud {
+      height: 40px;
+      background: var(--amiga-black);
+      border-bottom: 2px solid var(--amiga-orange);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 20px;
+    }
+
+    .hud-label { font-size: 6px; color: var(--amiga-gray); }
+    .hud-value { font-size: 8px; color: var(--amiga-yellow); }
+
+    .vitality-bar { display: flex; align-items: center; gap: 6px; }
+    .vitality-label { font-size: 6px; color: var(--amiga-gray); }
+    .vitality-track {
+      width: 80px; height: 10px;
+      border: 1px solid var(--amiga-gray);
+      background: var(--amiga-black);
+    }
+    .vitality-fill {
+      height: 100%;
+      background: var(--amiga-green);
+      transition: width 0.1s, background 0.3s;
+    }
+    .hud-score { margin-left: auto; }
+
+    #game-canvas {
+      display: block;
+      width: 640px;
+      height: 360px;
+      image-rendering: pixelated;
+    }
+
+    /* =====================================================================
+       WIN SCREEN
+       Image slot: images/win-art.png
+    ===================================================================== */
+    /* ─── WIN ART ─────────────────────────────────────────────────────────
+       File: images/win-art.png  (640 × 160)
+
+       Stability AI prompt:
+       "Amiga pixel art 1989 Cinemaware victory screen, American man floating
+        on his back in the Strait of Hormuz, lit cigar clamped in grinning
+        teeth, sunglasses, arms spread wide, two Shahed drones passing
+        harmlessly overhead, warm golden sunrise light on calm water,
+        triumphant mood, limited retro palette, no text, no UI"
+
+       Negative: text, watermark, modern CGI, bokeh, anime
+       Aspect: 16:9 (crop top 160px)
+    ─────────────────────────────────────────────────────────────────── */
+    #screen-win {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background:
+        url('./images/win-art.png') top center/cover no-repeat,
+        linear-gradient(180deg, #001155 0%, #003399 100%);
+    }
+
+    .win-art-overlay {
+      width: 640px; height: 160px;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 4px;
+    }
+    .win-art-label {
+      font-size: 7px;
+      color: rgba(100,150,255,0.4);
+    }
+    .win-art-desc {
+      font-size: 6px;
+      color: rgba(100,150,255,0.3);
+    }
+
+    /* =====================================================================
+       LOSE SCREEN
+       Image slot: images/lose-art.png
+    ===================================================================== */
+    /* ─── LOSE ART ────────────────────────────────────────────────────────
+       File: images/lose-art.png  (640 × 160)
+
+       Stability AI prompt:
+       "Amiga pixel art 1989 Cinemaware game-over screen, Omani Coast Guard
+        patrol vessel looming large, powerful searchlight beam cutting through
+        dark water onto a wet bedraggled man treading water, uniformed officers
+        aiming rifles down from deck, dramatic stark lighting, threat and
+        humiliation, limited retro palette, no text, no UI"
+
+       Negative: text, watermark, modern CGI, bokeh, anime
+       Aspect: 16:9 (crop top 160px)
+    ─────────────────────────────────────────────────────────────────── */
+    #screen-lose {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      background:
+        url('./images/lose-art.png') top center/cover no-repeat,
+        linear-gradient(180deg, #330000 0%, #660000 100%);
+    }
+
+    .lose-art-overlay {
+      width: 640px; height: 160px;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 4px;
+    }
+    .lose-art-label { font-size: 7px; color: rgba(255,100,100,0.4); }
+    .lose-art-desc  { font-size: 6px; color: rgba(255,100,100,0.3); }
+
+    .win-title  { font-size: 16px; color: var(--amiga-yellow);  text-shadow: 2px 2px 0 #886600; }
+    .lose-title { font-size: 14px; color: var(--amiga-red);     text-shadow: 2px 2px 0 #660000; }
+    .endscreen-msg    { font-size: 7px; color: var(--amiga-white); text-align: center; line-height: 1.8; padding: 0 40px; }
+    .endscreen-score  { font-size: 9px; color: var(--amiga-cyan); }
+    .endscreen-replay { font-size: 7px; color: var(--amiga-yellow); }
+
+    /* ===== AMIGA SCANLINE OVERLAY ===== */
+    #scanlines {
+      pointer-events: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px, transparent 2px,
+        rgba(0,0,0,0.15) 2px, rgba(0,0,0,0.15) 4px
+      );
+      z-index: 999;
+    }
+  </style>
+</head>
+<body>
+
+<div id="game-container">
+
+  <!-- ============================================================
+       TITLE SCREEN
+  ============================================================ -->
+  <div id="screen-title" class="screen active">
+    <div id="title-art">
+      <!-- Placeholder shown until images/title-art.png is present -->
+      <div class="img-placeholder"></div>
+    </div>
+    <div class="title-ui">
+      <div class="title-logo">HELL STRAIT</div>
+      <div class="title-sub">BASED ON A TRUE STORY &bull; HORMUZ 2026</div>
+      <div class="title-press blink">— PRESS SPACE OR TAP TO START —</div>
+      <div class="title-credit">A CITRINI PRODUCTIONS JOINT &bull; ANALYST #3 REPORTING</div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       CUTSCENE SCREENS
+  ============================================================ -->
+  <div id="screen-cutscene" class="screen">
+
+    <!-- Frame 1: Border crossing -->
+    <div class="cutscene-frame active" id="cut-1">
+      <div class="cutscene-image border-scene"></div>
+      <div class="cutscene-text-box">
+        <div>
+          <div class="cutscene-speaker">OMANI BORDER GUARD</div>
+          <div class="cutscene-line">"You understand the rules here against photography,<br>journalism, and intelligence gathering."</div>
         </div>
+        <div class="cutscene-continue blink">[ SPACE / TAP TO CONTINUE ] ▶</div>
       </div>
-
-      <div class="copper" aria-hidden="true"></div>
-
-      <nav class="ts-menu" aria-label="Game menu">
-        <div class="ts-menu-items">
-          <button type="button" id="btn-deck" autofocus>
-            <span class="ts-key">1</span>
-            <span class="ts-label">PLAY</span>
-          </button>
-          <button type="button" id="btn-brief">
-            <span class="ts-key">2</span>
-            <span class="ts-label">MISSION BRIEFING</span>
-          </button>
-          <button type="button" id="btn-intercept">
-            <span class="ts-key">3</span>
-            <span class="ts-label">GULF SDI — CARRIER DEFENCE</span>
-          </button>
-        </div>
-        <div class="ts-ticker" aria-hidden="true">
-          <span class="ts-ticker-inner">
-            PRESS 1 TO PLAY &nbsp;·&nbsp;
-            3 — GULF SDI FROM CVN CARRIER &nbsp;·&nbsp;
-            DEFEND THE CONVOY FOR 90 SECONDS &nbsp;·&nbsp;
-            AIR DRONES ATTACK FROM ABOVE &nbsp;·&nbsp;
-            SURFACE BOATS KNIFE IN FROM THE FLANKS &nbsp;·&nbsp;
-            SPACE / CLICK — PATRIOT MISSILE, AUTO OR AIMED &nbsp;·&nbsp;
-            Z — CANNON BURST, UNLIMITED AMMO &nbsp;·&nbsp;
-            ESC TO RETURN TO MENU &nbsp;·&nbsp;
-          </span>
-        </div>
-      </nav>
-
     </div>
 
-    <!-- ── MISSION BRIEFING ───────────────────────────────────── -->
-    <div id="briefing" class="screen" hidden aria-label="Mission briefing">
-
-      <div class="br-header">
-        <p class="br-classify">MERIDIAN COMMAND &nbsp;·&nbsp; STRAIT OPS &nbsp;·&nbsp; CLASSIFICATION: RESTRICTED</p>
-        <h2 class="br-title">Operation Meridian Gate</h2>
-        <p class="br-sub">PILOT BRIEFING &nbsp;·&nbsp; 0558 LOCAL &nbsp;·&nbsp; ASHAR SECTOR</p>
+    <!-- Frame 2: Analyst #3 signs the pledge -->
+    <div class="cutscene-frame" id="cut-2">
+      <div class="cutscene-image border-scene"></div>
+      <div class="cutscene-text-box">
+        <div>
+          <div class="cutscene-speaker">ANALYST #3</div>
+          <div class="cutscene-line">He made me sign the pledge. A formal prohibition<br>against reporting. I read every word of it.<br>That made him more suspicious.</div>
+        </div>
+        <div class="cutscene-continue blink">[ SPACE / TAP TO CONTINUE ] ▶</div>
       </div>
+    </div>
 
-      <div class="copper" aria-hidden="true"></div>
+    <!-- Frame 3: Meet Hamid -->
+    <div class="cutscene-frame" id="cut-3">
+      <div class="cutscene-image hamid-scene"></div>
+      <div class="cutscene-text-box">
+        <div>
+          <div class="cutscene-speaker">NARRATOR</div>
+          <div class="cutscene-line">At the canal: a man with a dinghy. No GPS.<br>Navigation by feel. $1,000 cash.<br>His name was Hamid.</div>
+        </div>
+        <div class="cutscene-continue blink">[ SPACE / TAP TO CONTINUE ] ▶</div>
+      </div>
+    </div>
 
-      <div class="br-body">
-
-        <div class="br-section">
-          <h3>Situation</h3>
-          <p>Ashar insurgent forces have interdicted the
-          Meridian Strait — the Coalition's primary fuel
-          corridor. Twelve laden tankers are staged at the
-          north anchorage awaiting transit.</p>
+    <!-- Frame 4: "Fuck the police" -->
+    <div class="cutscene-frame" id="cut-4">
+      <div class="cutscene-image hamid-scene"></div>
+      <div class="cutscene-text-box">
+        <div>
+          <div class="cutscene-speaker">ANALYST #3 → HAMID [SIGNAL]</div>
+          <div class="cutscene-line">"The CID told me to cancel. What if we just went anyway?"</div>
           <br>
-          <p>A transit window opens at 0600 and holds for
-          ninety seconds before Ashar reinforcement drones
-          arrive in overwhelming force.</p>
+          <div class="cutscene-speaker">HAMID</div>
+          <div class="cutscene-line">"Fuck the police."</div>
         </div>
-
-        <div class="br-section">
-          <h3>Threat Assessment</h3>
-          <ul>
-            <li class="threat-head">AIR THREAT — DRONE SWARM</li>
-            <li class="threat-stat">Fast vertical descent, erratic lateral drift</li>
-            <li class="threat-stat">Low mass — dangerous in numbers</li>
-            <li class="threat-stat">Damage: ×1 per convoy breach</li>
-            <li class="threat-head">SEA THREAT — FAST ATTACK CRAFT</li>
-            <li class="threat-stat">Knife in from port and starboard flanks</li>
-            <li class="threat-stat">Armoured hull, angled high-speed run</li>
-            <li class="threat-stat">Damage: ×4 per convoy breach</li>
-          </ul>
-        </div>
-
-        <div class="br-section">
-          <h3>Objective</h3>
-          <p>Intercept all inbound threats. Hold convoy
-          integrity for 90 seconds until the relief
-          squadron arrives on station.</p>
-          <br>
-          <p>Loadout: 16 Patriot missiles + unlimited cannon.
-          Patriot resupply drops every fourth wave.</p>
-        </div>
-
-        <div class="br-section">
-          <h3>Fire Control</h3>
-          <ul>
-            <li class="key-line"><span class="kbd">SPACE</span> Patriot — auto-targets nearest</li>
-            <li class="key-line"><span class="kbd">CLICK</span> Patriot — aimed at cursor</li>
-            <li class="key-line"><span class="kbd">Z</span> Cannon — fast burst, unlimited</li>
-            <li class="key-line"><span class="kbd">← →</span> manoeuvre</li>
-            <li class="key-line"><span class="kbd">W S</span> adjust depth band</li>
-            <li class="key-line"><span class="kbd">ESC</span> abort patrol / return</li>
-          </ul>
-        </div>
-
+        <div class="cutscene-continue blink">[ SPACE / TAP TO CONTINUE ] ▶</div>
       </div>
-
-      <div class="copper-thin" aria-hidden="true"></div>
-
-      <div class="br-footer">
-        <button type="button" id="brief-play">
-          <span class="ts-key">1</span>
-          <span class="ts-label">LAUNCH PATROL</span>
-        </button>
-        <span class="divider">·</span>
-        <button type="button" id="brief-back">
-          <span class="ts-key">ESC</span>
-          <span class="ts-label">STAND DOWN</span>
-        </button>
-      </div>
-
     </div>
 
-    <!-- ── GULF SDI BRIEFING ─────────────────────────────────────────── -->
-    <div id="gulf-sdi-brief" class="screen" hidden aria-label="Gulf SDI briefing">
-
-      <div class="br-header">
-        <p class="br-classify">MERIDIAN COMMAND &nbsp;·&nbsp; GULF SDI &nbsp;·&nbsp; CLASSIFICATION: SECRET</p>
-        <h2 class="br-title">Gulf SDI — Carrier Air Defence</h2>
-        <p class="br-sub">ENGAGEMENT AUTHORITY BRIEF &nbsp;·&nbsp; 0542Z &nbsp;·&nbsp; ASHAR SECTOR</p>
+    <!-- Frame 5: The crossing -->
+    <div class="cutscene-frame" id="cut-5">
+      <div class="cutscene-image boat-scene"></div>
+      <div class="cutscene-text-box">
+        <div>
+          <div class="cutscene-speaker">NARRATOR</div>
+          <div class="cutscene-line">The "speedboat" was a 40-year-old dinghy with a<br>few-hundred-CC engine. Shahed drones overhead.<br>IRGC patrol boats in the distance.</div>
+        </div>
+        <div class="cutscene-continue blink">[ SPACE / TAP TO CONTINUE ] ▶</div>
       </div>
-
-      <div class="copper" aria-hidden="true"></div>
-
-      <div class="br-body">
-
-        <div class="br-section">
-          <h3>Situation</h3>
-          <p>Ashar ballistic missile forces have moved
-          mobile launchers to forward staging areas
-          northeast of the Strait. ISTAR confirms
-          12 sequential waves targeting coalition
-          shore infrastructure.</p>
-          <br>
-          <p>Your carrier group is on station to provide
-          missile defence for five coastal oil plants.</p>
-        </div>
-
-        <div class="br-section">
-          <h3>Threat Assessment</h3>
-          <ul>
-            <li class="threat-head">BALLISTIC MISSILES</li>
-            <li class="threat-stat">Terminal-phase descent from high altitude</li>
-            <li class="threat-stat">Damage: ×1 per plant strike</li>
-            <li class="threat-stat">Waves escalate — final surge from wave 10</li>
-          </ul>
-        </div>
-
-        <div class="br-section">
-          <h3>Objective</h3>
-          <p>Defend all 5 coastal plants through 12 waves
-          until the relief squadron arrives on station.</p>
-          <br>
-          <p>Loadout: 12 SM-3 interceptors + unlimited CIWS.
-          SM-3 resupply drops every 18 seconds.</p>
-        </div>
-
-        <div class="br-section">
-          <h3>Fire Control</h3>
-          <ul>
-            <li class="key-line"><span class="kbd">CLICK</span> SM-3 — aimed blast radius (limited)</li>
-            <li class="key-line"><span class="kbd">SPACE</span> CIWS — auto-target nearest (unlimited)</li>
-            <li class="key-line"><span class="kbd">ESC</span> abort / return to command</li>
-          </ul>
-        </div>
-
-      </div>
-
-      <div class="copper-thin" aria-hidden="true"></div>
-
-      <div class="br-footer">
-        <button type="button" id="gulf-play">
-          <span class="ts-key">1</span>
-          <span class="ts-label">LAUNCH INTERCEPTORS</span>
-        </button>
-        <span class="divider">·</span>
-        <button type="button" id="gulf-back">
-          <span class="ts-key">ESC</span>
-          <span class="ts-label">STAND DOWN</span>
-        </button>
-      </div>
-
     </div>
 
-    <!-- ── Gulf SDI HUD (shown during play) ─────────────────── -->
-    <div id="gulf-hud" aria-label="Gulf SDI HUD">
-      <div class="gh-top">
-        <span class="gh-score" id="gh-score">0</span>
-        <span class="gh-time" id="gh-time">90s</span>
-        <span class="gh-hi" id="gh-hi" style="color:#3a5060;font-size:13px">HI 0</span>
-        <span class="gh-wave" id="gh-wave">W0</span>
+    <!-- Frame 6: The swim (transitions to game) -->
+    <div class="cutscene-frame" id="cut-6">
+      <div class="cutscene-image boat-scene"></div>
+      <div class="cutscene-text-box">
+        <div>
+          <div class="cutscene-speaker">NARRATOR</div>
+          <div class="cutscene-line">So I figured — if I was out here anyway —<br>I might as well go for it.<br>I hopped in the water. Cigar in my mouth. Shaheds above.</div>
+        </div>
+        <div class="cutscene-continue blink">[ SPACE / TAP — SWIM! ] ▶</div>
       </div>
-      <div class="gh-plants" id="gh-plants"></div>
-      <div class="gh-interceptors" id="gh-interceptors">SM-3 ×12</div>
-      <div class="gh-banner" id="gh-banner"></div>
-      <div class="gh-combo" id="gh-combo"></div>
     </div>
 
-    <!-- ── Gulf SDI Game Over ─────────────────────────────────── -->
-    <div id="gulf-gameover">
-      <div class="go-head" id="go-head">VICTORY</div>
-      <div class="go-body" id="go-body"></div>
-      <div class="go-controls">ENTER / ESC — menu  ·  R — play again</div>
-    </div>
+  </div>
 
-    <div id="game-root" aria-label="Patrol game"></div>
-    <div id="hint" role="status"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+  <!-- ============================================================
+       GAME SCREEN
+  ============================================================ -->
+  <div id="screen-game" class="screen">
+    <div id="game-hud">
+      <div class="vitality-bar">
+        <div class="vitality-label">VITALITY</div>
+        <div class="vitality-track">
+          <div class="vitality-fill" id="vitality-fill" style="width:100%"></div>
+        </div>
+      </div>
+      <div>
+        <span class="hud-label">ZYN </span>
+        <span class="hud-value" id="hud-zyn">0</span>
+      </div>
+      <div>
+        <span class="hud-label">CIGARS </span>
+        <span class="hud-value" id="hud-cigars">0</span>
+      </div>
+      <div class="hud-score">
+        <span class="hud-label">SCORE </span>
+        <span class="hud-value" id="hud-score">0</span>
+      </div>
+    </div>
+    <canvas id="game-canvas" width="640" height="360"></canvas>
+  </div>
+
+  <!-- ============================================================
+       WIN SCREEN
+  ============================================================ -->
+  <div id="screen-win" class="screen">
+    <div class="win-art-overlay">
+      <div class="win-art-label">[ images/win-art.png ]</div>
+      <div class="win-art-desc">640×160 · Man floating, cigar, victory, drones above</div>
+    </div>
+    <div class="win-title">YOU MADE IT.</div>
+    <div class="endscreen-msg">
+      Cigars. Shaheds. Coast Guard.<br>
+      You swam the Strait of Hormuz and lived.<br>
+      Tell your grandkids.
+    </div>
+    <div class="endscreen-score">SCORE: <span id="win-score">0</span></div>
+    <div class="endscreen-replay blink">[ SPACE / TAP TO PLAY AGAIN ]</div>
+  </div>
+
+  <!-- ============================================================
+       LOSE SCREEN
+  ============================================================ -->
+  <div id="screen-lose" class="screen">
+    <div class="lose-art-overlay">
+      <div class="lose-art-label">[ images/lose-art.png ]</div>
+      <div class="lose-art-desc">640×160 · Coast Guard vessel, searchlight, rifles drawn</div>
+    </div>
+    <div class="lose-title">INTERCEPTED.</div>
+    <div class="endscreen-msg">
+      The Coast Guard got you.<br>
+      They told you you were a moron.<br>
+      They were not wrong.
+    </div>
+    <div class="endscreen-score">SCORE: <span id="lose-score">0</span></div>
+    <div class="endscreen-replay blink">[ SPACE / TAP TO TRY AGAIN ]</div>
+  </div>
+
+  <!-- Scanline CRT overlay -->
+  <div id="scanlines"></div>
+</div>
+
+<script>
+/* ================================================================
+   HELL STRAIT — Game Engine
+   Amiga/Cinemaware style swim arcade
+   ================================================================ */
+
+const $ = id => document.getElementById(id);
+
+// ── Screen management ──────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+// ── Image loader ───────────────────────────────────────────────
+// Tries to load sprites from images/; falls back to procedural canvas drawing.
+// When images/sprite-*.png files exist, they are drawn instead.
+const sprites = {};
+const SPRITE_FILES = {
+  player:     'images/sprite-player.png',
+  drone:      'images/sprite-drone.png',
+  irgcBoat:   'images/sprite-boat.png',
+  zyn:        'images/sprite-zyn.png',
+  cigar:      'images/sprite-cigar.png',
+  coastGuard: 'images/sprite-coastguard.png',
+  // Optional: tiled background water texture (640×360)
+  // bgWater: 'images/bg-water.png',
+};
+
+/* ─── SPRITE PLACEHOLDER SPECS ─────────────────────────────────
+   All sprites: transparent PNG, Amiga 32-colour palette.
+   Place finished files in images/ and they auto-load.
+
+   images/sprite-player.png  — 96×20px (4 frames × 24×20)
+     "Amiga pixel art sprite sheet, 4-frame swim animation strip,
+      American man swimming breaststroke side-view, each frame 24×20px,
+      cigar clamped in teeth, aviator sunglasses, khaki shorts,
+      transparent background, 1989 Cinemaware style, limited palette"
+
+   images/sprite-drone.png   — 88×24px (2 frames × 44×24)
+     "Amiga pixel art sprite sheet, Shahed-136 kamikaze drone,
+      2 frames: engine-off / engine-on, top-down view 44×24px each,
+      dark grey delta-wing body, red LED blink, exhaust flame,
+      transparent background, retro game enemy, limited 32-colour palette"
+
+   images/sprite-boat.png    — 104×18px (2 frames × 52×18)
+     "Amiga pixel art sprite sheet, Iranian IRGC patrol boat,
+      2 frames left/right facing, top-down view 52×18px each,
+      dark hull, mounted machine gun, small Iranian flag,
+      wake lines, transparent background, 1989 retro game enemy"
+
+   images/sprite-zyn.png     — 16×12px (single frame)
+     "Amiga pixel art sprite, Zyn nicotine pouch, small white foil
+      packet, blue ZYN text, glowing cyan halo, 16×12px,
+      transparent background, retro game power-up collectible"
+
+   images/sprite-cigar.png   — 24×8px (single frame)
+     "Amiga pixel art sprite, lit Cuban cigar floating, 24×8px,
+      brown body, gold band, glowing orange ember tip, wisp of smoke,
+      transparent background, retro game collectible item"
+
+   images/sprite-coastguard.png — 68×24px (single frame)
+     "Amiga pixel art sprite, Omani Coast Guard patrol vessel,
+      top-down view 68×24px, dark navy hull, searchlight tower,
+      Omani flag at stern, rifles visible on deck,
+      transparent background, retro game boss enemy, dramatic"
+─────────────────────────────────────────────────────────────── */
+
+function preloadSprites(callback) {
+  let pending = Object.keys(SPRITE_FILES).length;
+  if (pending === 0) { callback(); return; }
+  for (const [key, src] of Object.entries(SPRITE_FILES)) {
+    const img = new Image();
+    img.onload  = () => { sprites[key] = img; if (--pending === 0) callback(); };
+    img.onerror = () => { sprites[key] = null; if (--pending === 0) callback(); }; // fallback to procedural
+    img.src = src;
+  }
+}
+
+// ── Input ──────────────────────────────────────────────────────
+const keys = {};
+document.addEventListener('keydown', e => { keys[e.code] = true; handleInput(e.code); });
+document.addEventListener('keyup',   e => { keys[e.code] = false; });
+document.addEventListener('touchstart', () => handleInput('touch'));
+document.addEventListener('click',      () => handleInput('click'));
+
+// ── State machine ──────────────────────────────────────────────
+let gameState = 'title';   // title | cutscene | playing | win | lose
+let cutFrame  = 0;
+const CUT_FRAMES = 6;
+
+function handleInput(code) {
+  if (gameState === 'title') {
+    startCutscene();
+  } else if (gameState === 'cutscene') {
+    advanceCutscene();
+  } else if (gameState === 'win' || gameState === 'lose') {
+    resetGame();
+    startCutscene();
+  }
+}
+
+function startCutscene() {
+  gameState = 'cutscene';
+  cutFrame  = 0;
+  showCutFrame(0);
+  showScreen('screen-cutscene');
+}
+
+function showCutFrame(n) {
+  document.querySelectorAll('.cutscene-frame').forEach(f => f.classList.remove('active'));
+  const frame = document.getElementById('cut-' + (n + 1));
+  if (frame) frame.classList.add('active');
+}
+
+function advanceCutscene() {
+  cutFrame++;
+  if (cutFrame >= CUT_FRAMES) {
+    startGame();
+  } else {
+    showCutFrame(cutFrame);
+  }
+}
+
+// ── Canvas & colours ──────────────────────────────────────────
+const canvas = $('game-canvas');
+const ctx    = canvas.getContext('2d');
+const W = 640, H = 360;
+
+// Amiga OCS-ish palette
+const COL = {
+  water1:     '#004488',
+  water2:     '#005599',
+  water3:     '#0066AA',
+  waveCrest:  '#44AACC',
+  sky:        '#000A22',
+  iranCoast:  '#221100',
+  omanCoast:  '#332200',
+  playerSkin: '#FFCC88',
+  playerBody: '#CC8844',
+  cigar:      '#CC9944',
+  smoke:      '#AAAAAA',
+  drone:      '#555555',
+  droneLed:   '#FF2200',
+  boat:       '#884422',
+  boatHull:   '#663311',
+  zyn:        '#FFFFFF',
+  zynText:    '#0055CC',
+  cigarPick:  '#CC7722',
+  coastGuard: '#003366',
+};
+
+// Game state
+let player, drones, irgcBoats, zynPouches, cigarPickups, waveOffset;
+let vitality, score, zynCount, cigarCount, frameCount, gameOver;
+let coastGuardActive, coastGuardX;
+
+// ── Pixel helpers ─────────────────────────────────────────────
+function fillRect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x), Math.round(y), w, h);
+}
+
+// ── Background drawing ────────────────────────────────────────
+function drawWater(offset) {
+  fillRect(0, 0, W, H, COL.water1);
+  for (let y = 0; y < H; y += 12) {
+    fillRect(0, y, W, 6, y % 24 === 0 ? COL.water2 : COL.water3);
+  }
+  ctx.fillStyle = COL.waveCrest;
+  for (let x = -20; x < W + 20; x += 40) {
+    const wx = (x + offset) % (W + 40);
+    const wy = 60 + Math.sin((wx + offset * 0.3) * 0.05) * 6;
+    ctx.fillRect(wx, wy, 16, 2);
+    ctx.fillRect(wx + 4, wy + 2, 8, 1);
+  }
+  for (let x = -10; x < W + 20; x += 55) {
+    const wx = (x + offset * 0.7) % (W + 55);
+    const wy = 140 + Math.sin((wx + offset * 0.2) * 0.04) * 8;
+    ctx.fillRect(wx, wy, 20, 2);
+    ctx.fillRect(wx + 6, wy + 2, 10, 1);
+  }
+  for (let x = 0; x < W + 30; x += 48) {
+    const wx = (x + offset * 0.5) % (W + 48);
+    const wy = 240 + Math.sin((wx + offset * 0.15) * 0.035) * 10;
+    ctx.fillRect(wx, wy, 24, 2);
+    ctx.fillRect(wx + 7, wy + 2, 12, 1);
+  }
+}
+
+function drawCoasts() {
+  // Iranian coast — top strip
+  // images/bg-coast-iran.png (640×20) — replace fillRect below when ready
+  // Prompt: "Amiga pixel art, Iranian coastline top-down strip 640×20px,
+  //  dark brown rocky silhouette, tiny distant buildings, minimal palette"
+  fillRect(0, 0, W, 20, COL.sky);
+  ctx.fillStyle = COL.iranCoast;
+  const cp = [0,8, 30,6, 55,10, 80,5, 110,9, 140,4, 170,11, 200,6,
+               230,8, 260,5, 290,10, 320,7, 350,9, 380,4, 410,11,
+               440,6, 470,8, 500,5, 530,9, 560,7, 590,11, 620,6, 640,8];
+  ctx.beginPath(); ctx.moveTo(0, 0);
+  for (let i = 0; i < cp.length; i += 2) ctx.lineTo(cp[i], cp[i+1]);
+  ctx.lineTo(640, 0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#664422';
+  ctx.font = '5px "Press Start 2P", monospace';
+  ctx.fillText('\u2190 QESHM ISLAND (IRAN)', 10, 17);
+
+  // Omani coast — bottom strip
+  // images/bg-coast-oman.png (640×18) — replace below when ready
+  // Prompt: "Amiga pixel art, Omani coastline strip 640×18px,
+  //  sandy warm-brown shore, small rocks, minimal retro palette"
+  fillRect(0, H - 18, W, 18, '#332200');
+  ctx.fillStyle = '#553300';
+  const op = [0,12, 40,8, 80,14, 120,9, 160,13, 200,8, 240,11,
+               280,7, 320,12, 360,9, 400,14, 440,8, 480,11, 520,7,
+               560,13, 600,9, 640,12];
+  ctx.beginPath(); ctx.moveTo(0, H);
+  for (let i = 0; i < op.length; i += 2) ctx.lineTo(op[i], H - op[i+1]);
+  ctx.lineTo(640, H); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#886633';
+  ctx.fillText('OMAN COAST \u2192', W - 140, H - 5);
+}
+
+// ── Sprite draw functions (procedural fallback) ────────────────
+// Each function checks sprites[key] first; uses ctx.drawImage if loaded.
+
+function drawPlayer(x, y, frame) {
+  const px = Math.round(x), py = Math.round(y + Math.sin(frameCount * 0.15) * 2);
+  if (sprites.player) {
+    // Sprite sheet: 4 frames × 24px wide, 20px tall
+    ctx.drawImage(sprites.player, (frame % 4) * 24, 0, 24, 20, px - 12, py - 10, 24, 20);
+    return;
+  }
+  // Procedural fallback
+  fillRect(px - 12, py - 4, 24, 10, COL.playerBody);
+  fillRect(px + 8,  py - 10, 12, 10, COL.playerSkin);
+  fillRect(px + 8,  py - 10, 12, 3, '#331100');
+  const armY = frame % 2 === 0 ? -6 : -2;
+  fillRect(px - 16, py + armY, 8, 3, COL.playerSkin);
+  fillRect(px - 4,  py + 2,   6, 3, COL.playerSkin);
+  const legX = frame % 2 === 0 ? -14 : -12;
+  fillRect(px + legX,     py + 6, 6, 4, COL.playerBody);
+  fillRect(px + legX + 8, py + 5, 5, 3, COL.playerBody);
+  fillRect(px + 18, py - 6, 8, 2, COL.cigar);
+  if (frameCount % 20 < 10) {
+    ctx.fillStyle = 'rgba(180,180,180,0.5)';
+    ctx.fillRect(px + 26, py - 9, 4, 3);
+  }
+  fillRect(px + 9,  py - 8, 5, 3, '#000000');
+  fillRect(px + 15, py - 8, 4, 3, '#000000');
+  ctx.fillStyle = COL.waveCrest;
+  ctx.fillRect(px - 14, py + 4, 3, 2);
+  ctx.fillRect(px + 10, py + 4, 3, 2);
+}
+
+function drawDrone(x, y) {
+  const px = Math.round(x), py = Math.round(y);
+  if (sprites.drone) {
+    const frame = frameCount % 30 < 15 ? 0 : 1;
+    ctx.drawImage(sprites.drone, frame * 44, 0, 44, 24, px, py, 44, 24);
+    return;
+  }
+  fillRect(px, py, 28, 8, COL.drone);
+  fillRect(px + 4, py - 4, 20, 4, '#333333');
+  ctx.fillStyle = '#444444';
+  ctx.beginPath(); ctx.moveTo(px, py + 4); ctx.lineTo(px - 12, py + 12); ctx.lineTo(px + 4, py + 8); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(px + 28, py + 4); ctx.lineTo(px + 40, py + 12); ctx.lineTo(px + 24, py + 8); ctx.closePath(); ctx.fill();
+  fillRect(px + 24, py + 2, 8, 4, '#555555');
+  const ledOn = frameCount % 30 < 15;
+  fillRect(px + 12, py + 2, 4, 4, ledOn ? COL.droneLed : '#440000');
+  if (frameCount % 4 < 2) { ctx.fillStyle = '#FF6600'; ctx.fillRect(px - 4, py + 3, 4, 2); }
+}
+
+function drawIRGCBoat(x, y, dir) {
+  const px = Math.round(x), py = Math.round(y);
+  if (sprites.irgcBoat) {
+    const frameIdx = dir < 0 ? 0 : 1;
+    ctx.drawImage(sprites.irgcBoat, frameIdx * 52, 0, 52, 18, px, py, 52, 18);
+    return;
+  }
+  ctx.save();
+  if (dir < 0) { ctx.translate(px + 24, py); ctx.scale(-1, 1); ctx.translate(-24, 0); }
+  else { ctx.translate(px, py); }
+  fillRect(0, 4, 48, 14, COL.boatHull);
+  fillRect(4, 2, 40, 6, COL.boat);
+  ctx.fillStyle = COL.boatHull;
+  ctx.beginPath(); ctx.moveTo(44, 4); ctx.lineTo(52, 10); ctx.lineTo(44, 16); ctx.closePath(); ctx.fill();
+  fillRect(8, 0, 18, 8, '#AA5522');
+  fillRect(30, 1, 3, 6, '#222222');
+  fillRect(8, -6, 6, 4, '#00AA44');
+  fillRect(8, -4, 6, 1, '#FFFFFF');
+  fillRect(8, -2, 6, 2, '#CC0000');
+  ctx.restore();
+}
+
+function drawZyn(x, y) {
+  const px = Math.round(x), py = Math.round(y);
+  if (sprites.zyn) {
+    ctx.drawImage(sprites.zyn, px, py);
+    return;
+  }
+  if (frameCount % 20 < 10) {
+    ctx.fillStyle = 'rgba(100,150,255,0.3)';
+    ctx.fillRect(px - 2, py - 2, 20, 16);
+  }
+  fillRect(px, py, 16, 12, COL.zyn);
+  fillRect(px + 1, py + 1, 14, 10, '#EEEEFF');
+  ctx.fillStyle = COL.zynText;
+  ctx.font = '5px "Press Start 2P", monospace';
+  ctx.fillText('ZYN', px + 2, py + 8);
+}
+
+function drawCigarPickup(x, y) {
+  const px = Math.round(x), py = Math.round(y);
+  if (sprites.cigar) {
+    ctx.drawImage(sprites.cigar, px, py);
+    return;
+  }
+  fillRect(px, py + 2, 20, 5, '#885522');
+  fillRect(px + 1, py + 2, 18, 2, COL.cigar);
+  fillRect(px + 6, py + 2, 4, 5, '#CCAA00');
+  fillRect(px + 17, py + 3, 4, 3, '#FF4400');
+  if (frameCount % 16 < 8) { ctx.fillStyle = 'rgba(200,200,200,0.5)'; ctx.fillRect(px + 18, py - 2, 3, 4); }
+}
+
+function drawCoastGuard(x, y) {
+  const px = Math.round(x), py = Math.round(y);
+  if (sprites.coastGuard) {
+    ctx.drawImage(sprites.coastGuard, px, py);
+    return;
+  }
+  fillRect(px, py + 8, 64, 16, '#002244');
+  fillRect(px + 4, py + 4, 52, 12, COL.coastGuard);
+  ctx.fillStyle = '#002244';
+  ctx.beginPath(); ctx.moveTo(px + 56, py + 8); ctx.lineTo(px + 68, py + 16); ctx.lineTo(px + 56, py + 20); ctx.closePath(); ctx.fill();
+  fillRect(px + 8, py, 24, 12, '#003366');
+  fillRect(px + 14, py - 4, 6, 4, '#555555');
+  // Searchlight beam
+  const beamAngle = Math.sin(frameCount * 0.04) * 0.4;
+  ctx.save();
+  ctx.translate(px + 17, py);
+  ctx.rotate(beamAngle);
+  const grad = ctx.createLinearGradient(0, 0, -120, 30);
+  grad.addColorStop(0, 'rgba(255,255,100,0.6)');
+  grad.addColorStop(1, 'rgba(255,255,100,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-120, -20); ctx.lineTo(-120, 50); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  fillRect(px + 28, py - 8, 8, 5, '#CC0000');
+  fillRect(px + 28, py - 6, 8, 1, '#FFFFFF');
+  fillRect(px + 28, py - 4, 8, 3, '#009933');
+  fillRect(px + 48, py + 4, 2, 6, '#333333');
+  fillRect(px + 52, py + 5, 2, 5, '#333333');
+}
+
+// ── Init ──────────────────────────────────────────────────────
+function resetGame() {
+  player           = { x: 80, y: H / 2, vy: 0, animFrame: 0 };
+  drones           = [];
+  irgcBoats        = [];
+  zynPouches       = [];
+  cigarPickups     = [];
+  waveOffset       = 0;
+  vitality         = 100;
+  score            = 0;
+  zynCount         = 0;
+  cigarCount       = 0;
+  frameCount       = 0;
+  gameOver         = false;
+  coastGuardActive = false;
+  coastGuardX      = W + 80;
+}
+
+function startGame() {
+  preloadSprites(() => {
+    gameState = 'playing';
+    resetGame();
+    showScreen('screen-game');
+    requestAnimationFrame(gameLoop);
+  });
+}
+
+// ── Spawners ──────────────────────────────────────────────────
+function spawnDrone()    { if (Math.random() < 0.015) drones.push({ x: W + 44, y: 20 + Math.random() * (H - 80), speed: 2 + Math.random() * 2 }); }
+function spawnIRGCBoat() { if (Math.random() < 0.008) irgcBoats.push({ x: W + 52, y: (Math.random() < 0.5 ? 25 : H - 120) + Math.random() * 80, speed: 1.5 + Math.random() * 1.5, dir: -1 }); }
+function spawnZyn()      { if (Math.random() < 0.01)  zynPouches.push({ x: W + 20, y: 30 + Math.random() * (H - 80), speed: 1 }); }
+function spawnCigar()    { if (Math.random() < 0.004) cigarPickups.push({ x: W + 24, y: 30 + Math.random() * (H - 80), speed: 0.8 }); }
+
+// ── Collision ─────────────────────────────────────────────────
+function overlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+// ── Game loop ─────────────────────────────────────────────────
+function gameLoop() {
+  if (gameState !== 'playing') return;
+
+  frameCount++;
+  waveOffset += 0.8;
+
+  // Input
+  const up   = keys['ArrowUp']   || keys['KeyW'] || keys['Space'];
+  const down = keys['ArrowDown'] || keys['KeyS'];
+  if (up)   player.vy -= 0.4;
+  if (down) player.vy += 0.4;
+  player.vy *= 0.88;
+  player.y  += player.vy;
+  player.y   = Math.max(22, Math.min(H - 34, player.y));
+  player.animFrame = Math.floor(frameCount / 8) % 4;
+
+  // Scoring and vitality drain
+  score    += 1;
+  vitality -= 0.04;
+  if (vitality <= 0) { endGame(false); return; }
+
+  // Coast Guard appears at score 800
+  if (score > 800 && !coastGuardActive) { coastGuardActive = true; coastGuardX = W + 80; }
+
+  // Spawn
+  spawnDrone(); spawnIRGCBoat(); spawnZyn(); spawnCigar();
+
+  // Move
+  drones.forEach(d => { d.x -= d.speed; });
+  irgcBoats.forEach(b => { b.x -= b.speed; });
+  zynPouches.forEach(z => { z.x -= z.speed; });
+  cigarPickups.forEach(c => { c.x -= c.speed; });
+
+  // Cull
+  drones       = drones.filter(d => d.x > -50);
+  irgcBoats    = irgcBoats.filter(b => b.x > -80);
+  zynPouches   = zynPouches.filter(z => z.x > -20);
+  cigarPickups = cigarPickups.filter(c => c.x > -24);
+
+  // Coast Guard chase
+  if (coastGuardActive) {
+    coastGuardX -= 1.2;
+    if (coastGuardX < player.x - 20) { endGame(false); return; }
+    if (coastGuardX < player.x + 200 && Math.random() < 0.001) { endGame(false); return; }
+  }
+
+  // Collisions
+  for (let i = drones.length - 1; i >= 0; i--) {
+    const d = drones[i];
+    if (overlap(player.x - 12, player.y - 10, 30, 20, d.x, d.y, 44, 12)) {
+      vitality -= 20;
+      drones.splice(i, 1);
+    }
+  }
+  for (const b of irgcBoats) {
+    if (overlap(player.x - 12, player.y - 8, 28, 18, b.x, b.y, 52, 18)) { endGame(false); return; }
+  }
+  for (let i = zynPouches.length - 1; i >= 0; i--) {
+    const z = zynPouches[i];
+    if (overlap(player.x - 8, player.y - 6, 20, 16, z.x, z.y, 16, 12)) {
+      vitality = Math.min(100, vitality + 25);
+      zynCount++; score += 50;
+      zynPouches.splice(i, 1);
+    }
+  }
+  for (let i = cigarPickups.length - 1; i >= 0; i--) {
+    const c = cigarPickups[i];
+    if (overlap(player.x - 8, player.y - 6, 24, 14, c.x, c.y, 24, 8)) {
+      cigarCount++; score += 100;
+      cigarPickups.splice(i, 1);
+    }
+  }
+
+  if (score >= 1500) { endGame(true); return; }
+
+  // Draw
+  ctx.clearRect(0, 0, W, H);
+  drawWater(waveOffset);
+  drawCoasts();
+  cigarPickups.forEach(c => drawCigarPickup(c.x, c.y));
+  zynPouches.forEach(z => drawZyn(z.x, z.y));
+  irgcBoats.forEach(b => drawIRGCBoat(b.x, b.y, b.dir));
+  drones.forEach(d => drawDrone(d.x, d.y));
+  if (coastGuardActive) drawCoastGuard(coastGuardX, H / 2 - 12);
+  drawPlayer(player.x, player.y, player.animFrame);
+
+  // Destination marker
+  if (score > 600) {
+    ctx.fillStyle = '#FFDD00';
+    ctx.font = '6px "Press Start 2P", monospace';
+    ctx.fillText('KUMZAR \u2192', 560 - Math.max(0, (score - 600) * 0.5), H / 2);
+  }
+
+  // HUD
+  const vPct = Math.max(0, vitality);
+  $('vitality-fill').style.width      = vPct + '%';
+  $('vitality-fill').style.background = vPct > 60 ? '#00AA44' : vPct > 30 ? '#FFAA00' : '#CC0000';
+  $('hud-score').textContent   = score;
+  $('hud-zyn').textContent     = zynCount;
+  $('hud-cigars').textContent  = cigarCount;
+
+  requestAnimationFrame(gameLoop);
+}
+
+function endGame(won) {
+  gameOver  = true;
+  gameState = won ? 'win' : 'lose';
+  $(won ? 'win-score' : 'lose-score').textContent = score;
+  showScreen(won ? 'screen-win' : 'screen-lose');
+}
+
+// ── Mobile touch controls ─────────────────────────────────────
+let touchStartY = 0;
+canvas.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; e.preventDefault(); }, { passive: false });
+canvas.addEventListener('touchmove',  e => { player.vy += (e.touches[0].clientY - touchStartY) * 0.1; touchStartY = e.touches[0].clientY; e.preventDefault(); }, { passive: false });
+canvas.addEventListener('click', () => { if (gameState === 'playing') player.vy -= 3; });
+
+// ── Boot ─────────────────────────────────────────────────────
+resetGame();
+ctx.clearRect(0, 0, W, H);
+
+</script>
+</body>
 </html>
